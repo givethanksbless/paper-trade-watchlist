@@ -1,0 +1,35 @@
+name: Paper Trade Watchlist
+
+on:
+  schedule:
+    # Runs hourly. GitHub's cron scheduler can lag a few minutes under load --
+    # that's fine here since the underlying signal engine works off 45-minute
+    # bars, so nothing meaningful changes faster than that anyway.
+    - cron: '0 * * * *'
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+
+permissions:
+  contents: write   # needed so the workflow can commit status.json/STATUS.md back
+
+jobs:
+  run-paper-trade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run paper trading engine
+        run: python3 paper_trade_cloud_engine.py
+
+      - name: Commit updated status
+        run: |
+          git config user.name "paper-trade-bot"
+          git config user.email "paper-trade-bot@users.noreply.github.com"
+          git add status.json STATUS.md
+          git diff --quiet --cached || git commit -m "Update paper trade status"
+          git push
