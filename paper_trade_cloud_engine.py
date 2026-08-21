@@ -34,6 +34,21 @@ replay described above, and the same tier-2-defaults-to-FULL_SIZE
 simplification already disclosed for the Mac version (regime_classifier_
 final.py was never wired up).
 
+BUGFIX (this version): simulate_full_history() previously added EVERY
+entry (both resolved trades and the still-open one) to the open_positions
+display dict, then tried to remove resolved ones again at their matching
+exit event. Real production data hit a case that dict didn't correctly
+clear (single symbol with several resolved trades before its final still-
+open one), leaving a resolved trade's dict -- which lacks sl/tp -- sitting
+in open_positions and crashing STATUS.md generation with a hard KeyError.
+Fixed by only ever adding a position to open_positions when it is
+genuinely still open (exit_t is None) -- resolved trades never touch that
+dict at all now, removing the whole bug class rather than patching the
+removal logic. Re-verified with regression tests covering the exact
+failing pattern (multiple resolved trades then one open, single symbol)
+plus the full original concurrency test suite (exact-fill/skip, exit-
+frees-room, partial scaling, floor rejection, mixed win/loss balance).
+
 HONEST LIMITATION: LOOKBACK_DAYS bounds how far back this can "see." If
 a single position somehow stays open longer than LOOKBACK_DAYS (very
 unlikely given ATR-based stops and tp_rr=4.5 on 45m bars, but not
@@ -346,7 +361,18 @@ def simulate_full_history(positions_by_symbol):
             assigned[pid] = sized
             if sized is not None:
                 current_total += sized
-                open_positions[p["symbol"]] = {**p, "risk_dollars": sized}
+                # Only track in open_positions (the DISPLAY dict) when this
+                # position is genuinely still open (exit_t is None) -- i.e.
+                # never for a resolved trade, even momentarily between its
+                # own entry and exit events. Resolved trades' dicts lack
+                # sl/tp (see detect_trades_live), so letting one land in
+                # open_positions -- even transiently -- risks it still being
+                # there at the end if any bookkeeping edge case skips its
+                # removal. Gating on exit_t is None removes that whole bug
+                # class by construction rather than relying on a matching
+                # delete at EXIT time.
+                if p["exit_t"] is None:
+                    open_positions[p["symbol"]] = {**p, "risk_dollars": sized}
         else:  # EXIT
             sized = assigned.get(pid)
             if sized is not None:
@@ -354,9 +380,6 @@ def simulate_full_history(positions_by_symbol):
                 balance = round(balance + pnl, 4)
                 closed_trades.append({**p, "risk_dollars": sized, "pnl": pnl})
                 current_total = round(current_total - sized, 4)
-            existing = open_positions.get(p["symbol"])
-            if existing is not None and existing["entry_t"] == p["entry_t"]:
-                del open_positions[p["symbol"]]
 
     closed_trades.sort(key=lambda t: t["exit_t"])
     return {
