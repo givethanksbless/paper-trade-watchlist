@@ -1,13 +1,13 @@
 # Paper Trade Demo Status
 
-Generated: 2026-08-22 07:44 UTC
+Generated: 2026-08-22 09:02 UTC
 
-Balance: $1021.13 (start $1000.00, net +21.13)
-Closed trades: 54  Wins: 22  Losses: 32  Win rate: 40.7%
-Open positions: 1
+Balance: $1329.95 (start $1000.00, net +329.95)
+Closed trades: 48  Wins: 21  Losses: 27  Win rate: 43.8%
+Open positions: 0
 
 ## Open positions
-- [CELRUSDT] LONG  entry=0.002139  sl=0.002128  tp=0.002191  risk=$20.00  opened=2026-08-22 05:30 UTC
+- (none)
 
 ## Closed in last 24h
-- [SYSUSDT] SHORT  WIN  entry=0.002560  risk=$20.00  pnl=$+85.34  closed=2026-08-21 15:15 UTC
+- (none)
