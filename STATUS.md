@@ -1,13 +1,13 @@
 # Paper Trade Demo Status
 
-Generated: 2026-08-25 21:56 UTC
+Generated: 2026-08-25 22:59 UTC
 
-Balance: $1500.86 (start $1000.00, net +500.86)
-Closed trades: 53  Wins: 25  Losses: 28  Win rate: 47.2%
+Balance: $1273.08 (start $1000.00, net +273.08)
+Closed trades: 13  Wins: 7  Losses: 6  Win rate: 53.8%
 Open positions: 0
 
 ## Open positions
 - (none)
 
 ## Closed in last 24h
-- [CRVUSDT] LONG  WIN  entry=0.318600  risk=$20.00  pnl=$+78.69  closed=2026-08-25 15:15 UTC
+- (none)
