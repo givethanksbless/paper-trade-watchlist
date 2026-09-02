@@ -1,9 +1,9 @@
 # Paper Trade Demo Status
 
-Generated: 2026-09-02 01:02 UTC
+Generated: 2026-09-02 02:09 UTC
 
-Balance: $1358.82 (start $1000.00, net +358.82)
-Closed trades: 45  Wins: 20  Losses: 25  Win rate: 44.4%
+Balance: $1136.38 (start $1000.00, net +136.38)
+Closed trades: 25  Wins: 11  Losses: 14  Win rate: 44.0%
 Open positions: 0
 
 ## Open positions
