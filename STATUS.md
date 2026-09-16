@@ -1,13 +1,13 @@
 # Paper Trade Demo Status
 
-Generated: 2026-09-16 06:02 UTC
+Generated: 2026-09-16 07:03 UTC
 
-Balance: $1201.12 (start $1000.00, net +201.12)
-Closed trades: 68  Wins: 28  Losses: 40  Win rate: 41.2%
-Open positions: 1
+Balance: $1148.78 (start $1000.00, net +148.78)
+Closed trades: 25  Wins: 10  Losses: 15  Win rate: 40.0%
+Open positions: 0
 
 ## Open positions
-- [SYSUSDT] SHORT  entry=0.001730  sl=0.001776  tp=0.001525  risk=$20.00  opened=2026-09-14 09:50 UTC
+- (none)
 
 ## Closed in last 24h
 - (none)
