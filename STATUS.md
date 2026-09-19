@@ -1,14 +1,13 @@
 # Paper Trade Demo Status
 
-Generated: 2026-09-19 21:02 UTC
+Generated: 2026-09-19 22:02 UTC
 
-Balance: $746.30 (start $1000.00, net -253.70)
-Closed trades: 85  Wins: 32  Losses: 53  Win rate: 37.6%
+Balance: $1190.54 (start $1000.00, net +190.54)
+Closed trades: 29  Wins: 13  Losses: 16  Win rate: 44.8%
 Open positions: 0
 
 ## Open positions
 - (none)
 
 ## Closed in last 24h
-- [XNOUSDT] SHORT  LOSS  entry=0.330000  risk=$20.00  pnl=$-30.48  closed=2026-09-18 21:05 UTC
-- [FLUXUSDT] SHORT  LOSS  entry=0.054400  risk=$20.00  pnl=$-61.90  closed=2026-09-18 23:20 UTC
+- (none)
