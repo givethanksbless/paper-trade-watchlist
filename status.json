@@ -1,13 +1,13 @@
 {
-  "generated_at_ms": 1792871752549,
-  "balance": 732.7366,
+  "generated_at_ms": 1792879643037,
+  "balance": 731.1063,
   "open_positions": {},
   "closed_trades": [
     {
-      "entry_t": 1789526700000,
-      "exit_t": 1789559100000,
+      "entry_t": 1789534500000,
+      "exit_t": 1789561500000,
       "r": -1.0,
-      "stop_pct": 0.00048085484805524524,
+      "stop_pct": 0.00038160894248910637,
       "is_buy": false,
       "entry_price": 0.00173,
       "symbol": "SYSUSDT",
@@ -15,202 +15,202 @@
       "pnl": -140.0
     },
     {
-      "entry_t": 1789605000000,
-      "exit_t": 1789623900000,
+      "entry_t": 1789607400000,
+      "exit_t": 1789623600000,
       "r": 4.5,
-      "stop_pct": 0.0041898283411941194,
+      "stop_pct": 0.004229990477319055,
       "is_buy": false,
       "entry_price": 19.41,
       "symbol": "COMPUSDT",
       "risk_dollars": 20.0,
-      "pnl": 75.6796
+      "pnl": 75.8156
     },
     {
-      "entry_t": 1789621200000,
-      "exit_t": 1789640100000,
+      "entry_t": 1789623600000,
+      "exit_t": 1789639800000,
       "r": 4.5,
-      "stop_pct": 0.004305940115171783,
+      "stop_pct": 0.004298368406027394,
       "is_buy": false,
       "entry_price": 0.33,
       "symbol": "XNOUSDT",
       "risk_dollars": 20.0,
-      "pnl": 76.0658
+      "pnl": 76.0412
     },
     {
-      "entry_t": 1789613100000,
-      "exit_t": 1789659000000,
+      "entry_t": 1789612800000,
+      "exit_t": 1789658700000,
       "r": -1.0,
-      "stop_pct": 0.005124704697888459,
+      "stop_pct": 0.005161737295327649,
       "is_buy": false,
       "entry_price": 0.3184,
       "symbol": "CRVUSDT",
       "risk_dollars": 20.0,
-      "pnl": -31.708
+      "pnl": -31.624
     },
     {
-      "entry_t": 1789648200000,
-      "exit_t": 1789659000000,
+      "entry_t": 1789647900000,
+      "exit_t": 1789658700000,
       "r": -1.0,
-      "stop_pct": 0.001384762689814044,
+      "stop_pct": 0.0013854776583540121,
       "is_buy": false,
       "entry_price": 0.04943,
       "symbol": "ONTUSDT",
       "risk_dollars": 20.0,
-      "pnl": -63.3287
+      "pnl": -63.3064
     },
     {
-      "entry_t": 1789637400000,
-      "exit_t": 1789664400000,
+      "entry_t": 1789637100000,
+      "exit_t": 1789664100000,
       "r": -1.0,
-      "stop_pct": 0.0036508500811034523,
+      "stop_pct": 0.003533681092757105,
       "is_buy": false,
       "entry_price": 1.351,
       "symbol": "LPTUSDT",
       "risk_dollars": 20.0,
-      "pnl": -36.4345
+      "pnl": -36.9795
     },
     {
-      "entry_t": 1789664400000,
-      "exit_t": 1789680600000,
+      "entry_t": 1789664100000,
+      "exit_t": 1789680300000,
       "r": -1.0,
-      "stop_pct": 0.002544503107382815,
+      "stop_pct": 0.002553408176635325,
       "is_buy": false,
       "entry_price": 0.3239,
       "symbol": "CRVUSDT",
       "risk_dollars": 20.0,
-      "pnl": -43.5802
+      "pnl": -43.498
     },
     {
-      "entry_t": 1789686000000,
-      "exit_t": 1789691400000,
+      "entry_t": 1789685700000,
+      "exit_t": 1789691100000,
       "r": -1.0,
-      "stop_pct": 0.00297763428368653,
+      "stop_pct": 0.0030067717804084684,
       "is_buy": false,
       "entry_price": 0.3281,
       "symbol": "CRVUSDT",
       "risk_dollars": 20.0,
-      "pnl": -40.1502
+      "pnl": -39.955
     },
     {
-      "entry_t": 1789664400000,
-      "exit_t": 1789694100000,
+      "entry_t": 1789664100000,
+      "exit_t": 1789693800000,
       "r": -1.0,
-      "stop_pct": 0.0014920893949760831,
+      "stop_pct": 0.0014925434996152385,
       "is_buy": false,
       "entry_price": 0.04989,
       "symbol": "ONTUSDT",
       "risk_dollars": 20.0,
-      "pnl": -60.2121
+      "pnl": -60.1998
     },
     {
-      "entry_t": 1789699500000,
-      "exit_t": 1789704900000,
+      "entry_t": 1789699200000,
+      "exit_t": 1789704600000,
       "r": -1.0,
-      "stop_pct": 0.0017445333229010103,
+      "stop_pct": 0.0017704117832391536,
       "is_buy": false,
       "entry_price": 0.05025,
       "symbol": "ONTUSDT",
       "risk_dollars": 20.0,
-      "pnl": -54.3932
+      "pnl": -53.8904
     },
     {
-      "entry_t": 1789710300000,
-      "exit_t": 1789718400000,
+      "entry_t": 1789710000000,
+      "exit_t": 1789718100000,
       "r": -1.0,
-      "stop_pct": 0.0021394660868157152,
+      "stop_pct": 0.002158460154633272,
       "is_buy": false,
       "entry_price": 0.0509,
       "symbol": "ONTUSDT",
       "risk_dollars": 20.0,
-      "pnl": -48.0444
+      "pnl": -47.7976
     },
     {
-      "entry_t": 1789664400000,
-      "exit_t": 1789718400000,
+      "entry_t": 1789664100000,
+      "exit_t": 1789718100000,
       "r": -1.0,
-      "stop_pct": 0.0017446395543077899,
+      "stop_pct": 0.0017843014039372728,
       "is_buy": false,
       "entry_price": 0.0535,
       "symbol": "FLUXUSDT",
       "risk_dollars": 20.0,
-      "pnl": -54.3911
+      "pnl": -53.6266
     },
     {
-      "entry_t": 1789702200000,
-      "exit_t": 1789721100000,
-      "r": 4.5,
-      "stop_pct": 0.0028915794181882683,
-      "is_buy": false,
-      "entry_price": 0.3392,
-      "symbol": "CRVUSDT",
-      "risk_dollars": 20.0,
-      "pnl": 69.2501
-    },
-    {
-      "entry_t": 1789723800000,
-      "exit_t": 1789775100000,
+      "entry_t": 1789723500000,
+      "exit_t": 1789774800000,
       "r": -1.0,
-      "stop_pct": 0.0014333590221010121,
+      "stop_pct": 0.0014409985199299014,
       "is_buy": false,
       "entry_price": 0.0544,
       "symbol": "FLUXUSDT",
       "risk_dollars": 20.0,
-      "pnl": -61.8597
+      "pnl": -61.6378
     },
     {
-      "entry_t": 1789885800000,
-      "exit_t": 1789912800000,
+      "entry_t": 1789888200000,
+      "exit_t": 1789912500000,
       "r": -1.0,
-      "stop_pct": 0.0029555816063571074,
+      "stop_pct": 0.0029455960689623605,
       "is_buy": true,
       "entry_price": 0.3332,
       "symbol": "CRVUSDT",
       "risk_dollars": 20.0,
-      "pnl": -40.3006
+      "pnl": -40.3694
     },
     {
-      "entry_t": 1789875000000,
-      "exit_t": 1789926300000,
+      "entry_t": 1789874700000,
+      "exit_t": 1789926000000,
       "r": 4.5,
-      "stop_pct": 0.005223016409963948,
+      "stop_pct": 0.005241351799630481,
       "is_buy": true,
       "entry_price": 1.561,
       "symbol": "LPTUSDT",
       "risk_dollars": 20.0,
-      "pnl": 78.5124
+      "pnl": 78.5526
     },
     {
-      "entry_t": 1789950600000,
-      "exit_t": 1789974900000,
+      "entry_t": 1789950300000,
+      "exit_t": 1789974600000,
       "r": 4.5,
-      "stop_pct": 0.0023607298066374853,
+      "stop_pct": 0.00237043838134277,
       "is_buy": true,
       "entry_price": 0.0587,
       "symbol": "FLUXUSDT",
       "risk_dollars": 20.0,
-      "pnl": 64.5841
+      "pnl": 64.6882
     },
     {
-      "entry_t": 1790069400000,
-      "exit_t": 1790072100000,
+      "entry_t": 1790069100000,
+      "exit_t": 1790071800000,
       "r": -1.0,
-      "stop_pct": 0.004752524830874411,
+      "stop_pct": 0.004737540959642316,
       "is_buy": true,
       "entry_price": 22.12,
       "symbol": "COMPUSDT",
       "risk_dollars": 20.0,
-      "pnl": -32.6249
+      "pnl": -32.6648
     },
     {
-      "entry_t": 1790077500000,
-      "exit_t": 1790080200000,
+      "entry_t": 1790077200000,
+      "exit_t": 1790079900000,
       "r": 4.5,
-      "stop_pct": 0.004187673781173729,
+      "stop_pct": 0.004175611417339516,
       "is_buy": true,
       "entry_price": 22.0,
       "symbol": "COMPUSDT",
       "risk_dollars": 20.0,
-      "pnl": 75.6722
+      "pnl": 75.6308
+    },
+    {
+      "entry_t": 1790077200000,
+      "exit_t": 1790079900000,
+      "r": 4.5,
+      "stop_pct": 0.002492439944587249,
+      "is_buy": true,
+      "entry_price": 0.0553,
+      "symbol": "ONTUSDT",
+      "risk_dollars": 20.0,
+      "pnl": 65.9272
     }
   ]
 }
