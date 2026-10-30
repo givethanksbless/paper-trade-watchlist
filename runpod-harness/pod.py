@@ -8,17 +8,21 @@
   python3 pod.py terminate POD_ID                          delete one pod
   python3 pod.py terminate-all                             delete every pod
   python3 pod.py guard    [--max-hours H]                  watch from outside, delete stuck/overdue pods
+  python3 pod.py collect                                   build memory/ from the village (read-only, free)
 
 launch/list/terminate need RUNPOD_API_KEY in the environment. startcmd needs nothing.
 Safety net: besides watchdog.py, the start command runs a backup timer that deletes
 the pod 10 min after the time cap even if the watchdog died.
 If profile.md sits next to this file, the pod gets a "private-chat" model that knows it.
+With CHAT_EMAIL and CHAT_PASSWORD set, the chat gets that fixed login (sign-up off), and
+launch feeds it a read-only copy of the village (collector.py -> feeder.py).
 """
 import argparse
 import base64
 import json
 import os
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -52,7 +56,16 @@ def start_cmd(max_hours):
     return ["bash", "-c", script]
 
 
+def login():
+    email, password = os.environ.get("CHAT_EMAIL"), os.environ.get("CHAT_PASSWORD")
+    return (email, password) if email and password else None
+
+
 def pod_spec(idle_min, max_hours):
+    env = {"MODEL": MODEL, "IDLE_MIN": str(idle_min), "MAX_HOURS": str(max_hours),
+           "DEFAULT_MODELS": "private-chat"}  # Open WebUI preselects it in every chat
+    if login():  # Open WebUI creates this admin on first start and turns sign-up off
+        env.update(WEBUI_ADMIN_EMAIL=login()[0], WEBUI_ADMIN_PASSWORD=login()[1], WEBUI_ADMIN_NAME="Jason")
     return {
         "name": "private-chat",
         "imageName": IMAGE,
@@ -62,8 +75,7 @@ def pod_spec(idle_min, max_hours):
         "containerDiskInGb": 80,
         "volumeInGb": 0,
         "ports": ["8080/http"],
-        "env": {"MODEL": MODEL, "IDLE_MIN": str(idle_min), "MAX_HOURS": str(max_hours),
-                "DEFAULT_MODELS": "private-chat"},  # Open WebUI preselects it in every chat
+        "env": env,
         "dockerStartCmd": start_cmd(max_hours),
     }
 
@@ -109,6 +121,11 @@ def launch(idle_min, max_hours):
         sys.exit(f"{len(pods)} pod(s) already running - run terminate-all first if you want a new one")
     if input("This starts a paid GPU pod. Type YES to continue: ").strip().lower() != "yes":
         sys.exit("cancelled")
+    if login():
+        import collector
+        print(collector.build(), flush=True)
+    else:
+        print("CHAT_EMAIL/CHAT_PASSWORD not set: no fixed login and no village feed this time", flush=True)
     for i in range(1, LAUNCH_TRIES + 1):
         try:
             pod = api("POST", "/pods", pod_spec(idle_min, max_hours))
@@ -126,6 +143,10 @@ def launch(idle_min, max_hours):
           f"chat link (ready in ~10-15 min): https://{pod['id']}-8080.proxy.runpod.net\n"
           f"Leave this window open: guard is now watching and stops once the pod is gone.\n"
           f"(Closing it is safe too - the pod still deletes itself.)\n", flush=True)
+    if login():
+        import feeder
+        threading.Thread(target=feeder.feed, daemon=True, args=(
+            f"https://{pod['id']}-8080.proxy.runpod.net", *login(), MODEL, 32768)).start()
     guard(max_hours)
 
 
@@ -154,7 +175,8 @@ def guard(max_hours):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("cmd", choices=["startcmd", "launch", "list", "terminate", "terminate-all", "guard"])
+    p.add_argument("cmd", choices=["startcmd", "launch", "list", "terminate", "terminate-all", "guard",
+                                   "collect"])
     p.add_argument("pod_id", nargs="?")
     p.add_argument("--idle-min", type=float, default=30)
     p.add_argument("--max-hours", type=float, default=3)
@@ -177,6 +199,9 @@ def main():
             print(f"terminated {pod['id']}")
     elif a.cmd == "guard":
         guard(a.max_hours)
+    elif a.cmd == "collect":
+        import collector
+        print(collector.build())
 
 
 if __name__ == "__main__":

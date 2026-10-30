@@ -11,6 +11,7 @@ change it, edit `MODEL` in pod.py and make sure `GPU_TYPES` has enough memory fo
 python3 pod.py launch --idle-min 30 --max-hours 2     # COSTS MONEY, asks first
 python3 pod.py list                                   # show pods, GPU and $/hr
 python3 pod.py terminate-all                          # emergency stop: delete every pod
+python3 pod.py collect                                # dry run of the village feed (free)
 ```
 
 `launch` does everything in one window: refuses if a pod already exists, retries once a
@@ -34,3 +35,18 @@ it as the system prompt and a 32K context; the chat selects it by default.
 Edit the file any time; the next pod uses the new version. It does not keep chat history.
 
 Both scripts send a custom User-Agent: rest.runpod.io returns 403 to Python's default one.
+
+## Fixed login and the village feed
+Set once on your computer (saved in ~/.zshrc like the API key): `CHAT_EMAIL` and
+`CHAT_PASSWORD`. With them, every pod:
+- gets that login as its only account (Open WebUI's `WEBUI_ADMIN_*` settings; sign-up is off).
+  The values are visible in the pod's settings in your Runpod account, so use a password you
+  don't use anywhere else.
+- is fed the village at launch: `collector.py` reads `~/trading` and that folder's Claude Code
+  chat history (read-only), strips secrets, and writes `memory/`; `feeder.py` then loads
+  `memory/briefing.md` (trader docs + last 3 days) into `private-chat` and uploads
+  `memory/archive/` as the "Village" knowledge base - type `#Village` in a chat to search it.
+
+The collector never reads files whose names look like secrets (.env, *secret*, *.pem, *.b64,
+...) and redacts key-like text (API keys, bot tokens, wallet keys, `password=...`) in what it
+copies. `memory/` is git-ignored. Run `python3 pod.py collect` to see exactly what would be sent.
