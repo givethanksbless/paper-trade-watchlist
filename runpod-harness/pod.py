@@ -6,6 +6,7 @@
   python3 pod.py list                                      list your pods
   python3 pod.py terminate POD_ID                          delete one pod
   python3 pod.py terminate-all                             delete every pod
+  python3 pod.py guard    [--max-hours H]                  watch from outside, delete stuck/overdue pods
 
 launch/list/terminate need RUNPOD_API_KEY in the environment. startcmd needs nothing.
 Safety net: besides watchdog.py, the start command runs a backup timer that deletes
@@ -16,13 +17,16 @@ import base64
 import json
 import os
 import sys
+import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 IMAGE = "ghcr.io/open-webui/open-webui:ollama"
 MODEL = "huihui_ai/deepseek-r1-abliterated:14b"
 GPU_TYPES = ["NVIDIA RTX A5000", "NVIDIA GeForce RTX 3090", "NVIDIA GeForce RTX 4090"]
 API = "https://rest.runpod.io/v1"
+START_MIN = 15  # guard deletes a pod whose container hasn't started by then
 
 
 def start_cmd(max_hours):
@@ -64,9 +68,43 @@ def api(method, path, body=None):
     return json.loads(raw) if raw else None
 
 
+def started(pod_id):
+    # the watchdog runs inside the container, so a pod stuck before start has no watchdog
+    q = {"query": f'query {{ pod(input: {{podId: "{pod_id}"}}) {{ runtime {{ uptimeInSeconds }} }} }}'}
+    req = urllib.request.Request(
+        "https://api.runpod.io/graphql", data=json.dumps(q).encode(),
+        headers={"Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}",
+                 "Content-Type": "application/json", "User-Agent": "runpod-harness/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return bool(((json.loads(r.read())["data"]["pod"] or {}).get("runtime")))
+
+
+def guard(max_hours):
+    while True:
+        try:
+            pods = api("GET", "/pods") or []
+            if not pods:
+                print(time.strftime("%H:%M:%S"), "no pods left - guard done", flush=True)
+                return
+            for pod in pods:
+                created = datetime.strptime(pod["createdAt"][:19], "%Y-%m-%d %H:%M:%S")
+                age = (datetime.now(timezone.utc).replace(tzinfo=None) - created).total_seconds() / 60
+                if age > max_hours * 60 + 15:
+                    reason = f"past time cap ({age:.0f} min)"
+                elif age > START_MIN and not started(pod["id"]):
+                    reason = f"container not started after {age:.0f} min"
+                else:
+                    continue
+                api("DELETE", f"/pods/{pod['id']}")
+                print(time.strftime("%H:%M:%S"), f"deleted {pod['id']}: {reason}", flush=True)
+        except Exception as e:
+            print(time.strftime("%H:%M:%S"), f"guard check failed: {e}", flush=True)
+        time.sleep(30)
+
+
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("cmd", choices=["startcmd", "launch", "list", "terminate", "terminate-all"])
+    p.add_argument("cmd", choices=["startcmd", "launch", "list", "terminate", "terminate-all", "guard"])
     p.add_argument("pod_id", nargs="?")
     p.add_argument("--idle-min", type=float, default=30)
     p.add_argument("--max-hours", type=float, default=3)
@@ -90,6 +128,8 @@ def main():
         for pod in api("GET", "/pods") or []:
             api("DELETE", f"/pods/{pod['id']}")
             print(f"terminated {pod['id']}")
+    elif a.cmd == "guard":
+        guard(a.max_hours)
 
 
 if __name__ == "__main__":
