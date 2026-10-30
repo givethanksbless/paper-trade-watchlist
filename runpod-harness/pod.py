@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Controller for the private chat pod (Open WebUI + Ollama on one 24 GB GPU).
+"""Controller for the private chat pod (Open WebUI + Ollama on one 48 GB GPU).
 
   python3 pod.py startcmd [--idle-min N] [--max-hours H]   print the pod start command (watchdog embedded)
   python3 pod.py launch   [--idle-min N] [--max-hours H]   create the pod - COSTS MONEY, asks first;
@@ -26,8 +26,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 IMAGE = "ghcr.io/open-webui/open-webui:ollama"
-MODEL = "huihui_ai/deepseek-r1-abliterated:14b"
-GPU_TYPES = ["NVIDIA RTX A5000", "NVIDIA GeForce RTX 3090", "NVIDIA GeForce RTX 4090"]
+MODEL = "huihui_ai/qwen3.5-abliterated:27b-Claude-q8_0"  # 30 GB download
+# 48 GB cards, cheapest first; Runpod takes the first one free (~$0.33-0.79/hr)
+GPU_TYPES = ["NVIDIA RTX A6000", "NVIDIA A40", "NVIDIA L40", "NVIDIA RTX 6000 Ada Generation",
+             "NVIDIA L40S"]
 API = "https://rest.runpod.io/v1"
 START_MIN = 15  # guard deletes a pod whose container hasn't started by then
 LAUNCH_TRIES = 20  # one a minute while no GPU is free; failed tries cost nothing
@@ -57,10 +59,11 @@ def pod_spec(idle_min, max_hours):
         "gpuTypeIds": GPU_TYPES,
         "gpuCount": 1,
         "cloudType": "COMMUNITY",
-        "containerDiskInGb": 40,
+        "containerDiskInGb": 80,
         "volumeInGb": 0,
         "ports": ["8080/http"],
-        "env": {"MODEL": MODEL, "IDLE_MIN": str(idle_min), "MAX_HOURS": str(max_hours)},
+        "env": {"MODEL": MODEL, "IDLE_MIN": str(idle_min), "MAX_HOURS": str(max_hours),
+                "DEFAULT_MODELS": "private-chat"},  # Open WebUI preselects it in every chat
         "dockerStartCmd": start_cmd(max_hours),
     }
 

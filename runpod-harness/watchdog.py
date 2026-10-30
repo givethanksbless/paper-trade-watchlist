@@ -6,15 +6,16 @@ Uses RUNPOD_POD_ID and RUNPOD_API_KEY, which Runpod injects into every pod.
 "Idle" = Ollama has no model loaded. Ollama unloads a model ~5 min after the
 last chat message, so the pod is deleted about IDLE_MIN + 5 min after your last message.
 If anything in this script crashes, it deletes the pod (money safety first).
-If /tmp/profile.md exists, it also creates a "private-chat" model with that profile
-as its system prompt, so every chat starts out knowing who you are.
+It also creates a "private-chat" model (the chat's default) with a larger context and,
+if /tmp/profile.md exists, that profile as its system prompt.
 """
 import json
 import os
 import time
 import urllib.request
 
-MODEL = os.environ.get("MODEL", "huihui_ai/deepseek-r1-abliterated:14b")
+MODEL = os.environ.get("MODEL", "huihui_ai/qwen3.5-abliterated:27b-Claude-q8_0")
+NUM_CTX = 32768  # room for the profile and notes; Ollama's default is much smaller
 IDLE_SEC = float(os.environ.get("IDLE_MIN", "30")) * 60
 MAX_SEC = float(os.environ.get("MAX_HOURS", "3")) * 3600
 POD_ID = os.environ.get("RUNPOD_POD_ID", "")
@@ -72,14 +73,16 @@ def create_profile_model():
         with open("/tmp/profile.md") as f:
             profile = f.read().strip()
     except OSError:
-        return
+        profile = ""
     try:  # current Ollama API
         http("POST", f"{OLLAMA}/api/create",
-             {"model": "private-chat", "from": MODEL, "system": profile, "stream": False}, timeout=600)
+             {"model": "private-chat", "from": MODEL, "system": profile,
+              "parameters": {"num_ctx": NUM_CTX}, "stream": False}, timeout=600)
     except Exception as e:
         log(f"profile model (new API) failed: {e}; trying Modelfile form")
         try:  # older Ollama API
-            modelfile = f'FROM {MODEL}\nSYSTEM """{profile.replace(chr(34) * 3, chr(39) * 3)}"""\n'
+            modelfile = (f'FROM {MODEL}\nPARAMETER num_ctx {NUM_CTX}\n'
+                         f'SYSTEM """{profile.replace(chr(34) * 3, chr(39) * 3)}"""\n')
             http("POST", f"{OLLAMA}/api/create",
                  {"name": "private-chat", "modelfile": modelfile, "stream": False}, timeout=600)
         except Exception as e2:

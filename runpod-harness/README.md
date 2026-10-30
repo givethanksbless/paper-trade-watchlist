@@ -1,7 +1,11 @@
 # Runpod private-chat harness
 
-Open WebUI + Ollama on one 24 GB GPU (A5000, 3090 or 4090, whichever is free), with a
-watchdog that deletes the pod when idle or past a time cap. Needs `RUNPOD_API_KEY`.
+Open WebUI + Ollama on one 48 GB GPU (A6000 or A40 at ~$0.33-0.35/hr; L40, RTX 6000 Ada or
+L40S at ~$0.69-0.79/hr if those are taken), with a watchdog that deletes the pod when idle
+or past a time cap. Needs `RUNPOD_API_KEY`.
+
+Model: `huihui_ai/qwen3.5-abliterated:27b-Claude-q8_0` (27B, 8-bit, 30 GB download). To
+change it, edit `MODEL` in pod.py and make sure `GPU_TYPES` has enough memory for it.
 
 ```bash
 python3 pod.py launch --idle-min 30 --max-hours 2     # COSTS MONEY, asks first
@@ -26,7 +30,7 @@ bill until deleted by hand (website: ⋮ → Terminate, not Stop).
 
 ## Profile
 `profile.md` is packed into every pod. The watchdog creates a `private-chat` model with
-it as the system prompt - pick that model in the chat to get answers that know you.
+it as the system prompt and a 32K context; the chat selects it by default.
 Edit the file any time; the next pod uses the new version. It does not keep chat history.
 
 Both scripts send a custom User-Agent: rest.runpod.io returns 403 to Python's default one.
