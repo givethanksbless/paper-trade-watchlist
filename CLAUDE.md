@@ -6,6 +6,12 @@ Jason has no coding background. Every reply:
 - End by re-listing ALL remaining steps.
 - Commands he should run go in their own ```bash block, one command per block.
 
+## Observational only (the village and the VPS)
+- The village (`~/trading` on Jason's Mac, the agents on his Vultr VPS) and everything else on
+  that VPS are READ-ONLY. Never change, restart, fix or delete anything there, even if broken.
+- `runpod-harness/collector.py` only reads them; its copies go to `runpod-harness/memory/`,
+  which is git-ignored and must never be committed (it holds private trading data).
+
 ## Money safety (Runpod)
 - Ask before anything that costs money. Never leave a pod running.
 - Launch only via `runpod-harness/pod.py`. Pods made in the Runpod website have no
