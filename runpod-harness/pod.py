@@ -2,7 +2,8 @@
 """Controller for the private chat pod (Open WebUI + Ollama on one 24 GB GPU).
 
   python3 pod.py startcmd [--idle-min N] [--max-hours H]   print the pod start command (watchdog embedded)
-  python3 pod.py launch   [--idle-min N] [--max-hours H]   create the pod - COSTS MONEY, asks first
+  python3 pod.py launch   [--idle-min N] [--max-hours H]   create the pod - COSTS MONEY, asks first;
+                                                           retries until a GPU is free, then runs guard
   python3 pod.py list                                      list your pods
   python3 pod.py terminate POD_ID                          delete one pod
   python3 pod.py terminate-all                             delete every pod
@@ -11,6 +12,7 @@
 launch/list/terminate need RUNPOD_API_KEY in the environment. startcmd needs nothing.
 Safety net: besides watchdog.py, the start command runs a backup timer that deletes
 the pod 10 min after the time cap even if the watchdog died.
+If profile.md sits next to this file, the pod gets a "private-chat" model that knows it.
 """
 import argparse
 import base64
@@ -18,6 +20,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,13 +30,18 @@ MODEL = "huihui_ai/deepseek-r1-abliterated:14b"
 GPU_TYPES = ["NVIDIA RTX A5000", "NVIDIA GeForce RTX 3090", "NVIDIA GeForce RTX 4090"]
 API = "https://rest.runpod.io/v1"
 START_MIN = 15  # guard deletes a pod whose container hasn't started by then
+LAUNCH_TRIES = 20  # one a minute while no GPU is free; failed tries cost nothing
 
 
 def start_cmd(max_hours):
-    wd = base64.b64encode((Path(__file__).parent / "watchdog.py").read_bytes()).decode()
+    here = Path(__file__).parent
+    wd = base64.b64encode((here / "watchdog.py").read_bytes()).decode()
+    profile = here / "profile.md"
     backup = int(max_hours * 3600 + 600)
     script = (
         f"echo {wd} | base64 -d > /tmp/watchdog.py; "
+        + (f"echo {base64.b64encode(profile.read_bytes()).decode()} | base64 -d > /tmp/profile.md; "
+           if profile.exists() else "") +
         "nohup python3 /tmp/watchdog.py > /tmp/watchdog.log 2>&1 & "
         f"(sleep {backup}; curl -s -X DELETE -H \"Authorization: Bearer $RUNPOD_API_KEY\" "
         "https://rest.runpod.io/v1/pods/$RUNPOD_POD_ID) & "
@@ -68,15 +76,54 @@ def api(method, path, body=None):
     return json.loads(raw) if raw else None
 
 
-def started(pod_id):
-    # the watchdog runs inside the container, so a pod stuck before start has no watchdog
-    q = {"query": f'query {{ pod(input: {{podId: "{pod_id}"}}) {{ runtime {{ uptimeInSeconds }} }} }}'}
+def pod_info(pod_id):
+    # GraphQL has the runtime and GPU name, which the REST pod object leaves empty
+    q = {"query": f'query {{ pod(input: {{podId: "{pod_id}"}}) '
+                  '{ runtime { uptimeInSeconds } machine { gpuDisplayName } } }'}
     req = urllib.request.Request(
         "https://api.runpod.io/graphql", data=json.dumps(q).encode(),
         headers={"Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}",
                  "Content-Type": "application/json", "User-Agent": "runpod-harness/1.0"})
     with urllib.request.urlopen(req, timeout=60) as r:
-        return bool(((json.loads(r.read())["data"]["pod"] or {}).get("runtime")))
+        return json.loads(r.read())["data"]["pod"] or {}
+
+
+def started(pod_id):
+    # the watchdog runs inside the container, so a pod stuck before start has no watchdog
+    return bool(pod_info(pod_id).get("runtime"))
+
+
+def gpu_name(pod_id):
+    try:
+        return (pod_info(pod_id).get("machine") or {}).get("gpuDisplayName") or "GPU"
+    except Exception:
+        return "GPU"
+
+
+def launch(idle_min, max_hours):
+    pods = api("GET", "/pods") or []
+    if pods:
+        sys.exit(f"{len(pods)} pod(s) already running - run terminate-all first if you want a new one")
+    if input("This starts a paid GPU pod. Type YES to continue: ").strip().lower() != "yes":
+        sys.exit("cancelled")
+    for i in range(1, LAUNCH_TRIES + 1):
+        try:
+            pod = api("POST", "/pods", pod_spec(idle_min, max_hours))
+            break
+        except urllib.error.HTTPError as e:
+            if e.code != 500:
+                raise
+            print(time.strftime("%H:%M:%S"), f"try {i}/{LAUNCH_TRIES}: no GPU free yet, "
+                  "retrying in 60s (costs nothing)", flush=True)
+            time.sleep(60)
+    else:
+        sys.exit("no GPU became free - nothing was created, try again later")
+    time.sleep(5)
+    print(f"\npod {pod['id']} created on {gpu_name(pod['id'])} at ${pod.get('costPerHr')}/hr\n"
+          f"chat link (ready in ~10-15 min): https://{pod['id']}-8080.proxy.runpod.net\n"
+          f"Leave this window open: guard is now watching and stops once the pod is gone.\n"
+          f"(Closing it is safe too - the pod still deletes itself.)\n", flush=True)
+    guard(max_hours)
 
 
 def guard(max_hours):
@@ -113,14 +160,11 @@ def main():
     if a.cmd == "startcmd":
         print(json.dumps(pod_spec(a.idle_min, a.max_hours), indent=2))
     elif a.cmd == "launch":
-        if input("This starts a paid GPU pod. Type YES to continue: ") != "YES":
-            sys.exit("cancelled")
-        pod = api("POST", "/pods", pod_spec(a.idle_min, a.max_hours))
-        print(f"pod {pod['id']} created - chat link (ready in ~5-10 min): "
-              f"https://{pod['id']}-8080.proxy.runpod.net")
+        launch(a.idle_min, a.max_hours)
     elif a.cmd == "list":
         for pod in api("GET", "/pods") or []:
-            print(pod["id"], pod.get("name"), pod.get("desiredStatus"), f"${pod.get('costPerHr')}/hr")
+            print(pod["id"], pod.get("name"), pod.get("desiredStatus"), gpu_name(pod["id"]),
+                  f"${pod.get('costPerHr')}/hr")
     elif a.cmd == "terminate":
         api("DELETE", f"/pods/{a.pod_id or sys.exit('give a POD_ID')}")
         print(f"terminated {a.pod_id}")

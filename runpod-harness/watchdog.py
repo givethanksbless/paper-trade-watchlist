@@ -6,6 +6,8 @@ Uses RUNPOD_POD_ID and RUNPOD_API_KEY, which Runpod injects into every pod.
 "Idle" = Ollama has no model loaded. Ollama unloads a model ~5 min after the
 last chat message, so the pod is deleted about IDLE_MIN + 5 min after your last message.
 If anything in this script crashes, it deletes the pod (money safety first).
+If /tmp/profile.md exists, it also creates a "private-chat" model with that profile
+as its system prompt, so every chat starts out knowing who you are.
 """
 import json
 import os
@@ -64,6 +66,28 @@ def model_loaded():
     return bool(json.loads(out).get("models"))
 
 
+def create_profile_model():
+    # failures only log: a missing profile must never take the pod down
+    try:
+        with open("/tmp/profile.md") as f:
+            profile = f.read().strip()
+    except OSError:
+        return
+    try:  # current Ollama API
+        http("POST", f"{OLLAMA}/api/create",
+             {"model": "private-chat", "from": MODEL, "system": profile, "stream": False}, timeout=600)
+    except Exception as e:
+        log(f"profile model (new API) failed: {e}; trying Modelfile form")
+        try:  # older Ollama API
+            modelfile = f'FROM {MODEL}\nSYSTEM """{profile.replace(chr(34) * 3, chr(39) * 3)}"""\n'
+            http("POST", f"{OLLAMA}/api/create",
+                 {"name": "private-chat", "modelfile": modelfile, "stream": False}, timeout=600)
+        except Exception as e2:
+            log(f"profile model failed: {e2} - plain {MODEL} still works")
+            return
+    log("profile model private-chat ready")
+
+
 def main():
     log(f"watchdog start: model={MODEL} idle={IDLE_SEC / 60:.0f}min "
         f"cap={MAX_SEC / 3600:.1f}h pod={POD_ID}")
@@ -90,6 +114,7 @@ def main():
             log(f"pull failed: {e}; retrying in 30s")
             time.sleep(30)
 
+    create_profile_model()
     last_active = time.time()
     while True:
         check_cap()
