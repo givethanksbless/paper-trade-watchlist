@@ -3,7 +3,7 @@
 
 Settings (env vars): MODEL, IDLE_MIN (default 30), MAX_HOURS (default 3).
 Uses RUNPOD_POD_ID and RUNPOD_API_KEY, which Runpod injects into every pod.
-"Idle" = Ollama has no model loaded. Ollama unloads a model ~5 min after the
+"Idle" = Ollama has no chat model loaded. Ollama unloads a model ~5 min after the
 last chat message, so the pod is deleted about IDLE_MIN + 5 min after your last message.
 If anything in this script crashes, it deletes the pod (money safety first).
 It also creates a "private-chat" model (the chat's default) with a larger context and,
@@ -63,8 +63,10 @@ def check_cap():
 
 
 def model_loaded():
+    # only the chat model counts: a helper model loaded to index uploaded files is not you chatting
     _, out = http("GET", f"{OLLAMA}/api/ps", timeout=10)
-    return bool(json.loads(out).get("models"))
+    chat = ("private-chat", MODEL.split(":")[0])
+    return any(m.get("name", "").startswith(chat) for m in json.loads(out).get("models") or [])
 
 
 def create_profile_model():
