@@ -22,7 +22,8 @@ VILLAGE = Path(os.environ.get("VILLAGE_DIR", "~/trading")).expanduser()
 PROJECTS = Path("~/.claude/projects").expanduser()
 CHATS = PROJECTS / str(VILLAGE).replace("/", "-")  # chats started in the village folder: all count
 HOME_CHATS = PROJECTS / str(Path.home()).replace("/", "-")  # mixed projects: only village ones
-VILLAGE_WORDS = re.compile(r"(?i)village|playa|/trading\b")
+VILLAGE_WORDS = re.compile(r"(?i)village|playa|/trading\b|crypto|bitcoin|\bbtc\b|\beth\b|usdt|\bperps?\b|"
+                           r"futures|backtest|forward.?test|hyperliquid|weex|binance|bybit|altcoin|delisting")
 MIN_VILLAGE_MENTIONS = 5
 OUT = Path(__file__).parent / "memory"
 BRIEF_DOCS = ["TRADER-PROFILE.md", "ABOUT_PLAYA.md"]
@@ -52,6 +53,7 @@ KEY_VALUE = re.compile(
     r"(?i)((?:api[_-]?key|secret|token|passw(?:or)?d|passphrase|private[_-]?key|auth[_-]?key)"
     r"[\w-]*[\\\"']*\s*[:=]\s*[\\\"']*)([^\s\"'\\,}]{8,})")
 redactions = {}
+skipped = []  # home-folder chats left out, listed in the summary so the filter can be checked
 
 
 def scrub(text):
@@ -109,12 +111,13 @@ def chat_messages(path):
 
 
 def village_sessions():
-    """Every chat in the village folder, plus home-folder chats that are clearly about the village."""
+    """Every chat in the village folder, plus home-folder chats clearly about the village or
+    crypto trading (the village is all crypto trading). Skipped ones are kept for the summary."""
     found = list(CHATS.glob("*.jsonl")) if CHATS.is_dir() else []
+    skipped.clear()
     for p in HOME_CHATS.glob("*.jsonl") if HOME_CHATS.is_dir() and HOME_CHATS != CHATS else []:
         text = "\n".join(m[2] for m in chat_messages(p))
-        if len(VILLAGE_WORDS.findall(text)) >= MIN_VILLAGE_MENTIONS:
-            found.append(p)
+        (found if len(VILLAGE_WORDS.findall(text)) >= MIN_VILLAGE_MENTIONS else skipped).append(p)
     return sorted(found, key=lambda p: p.stat().st_mtime)
 
 
@@ -184,15 +187,21 @@ def build():
     return summary(sessions)
 
 
+def preview(p):
+    first = next((m[2] for m in chat_messages(p) if m[1] == "Jason"), "")
+    first = scrub(" ".join(first.split()))[:70]
+    return (f"    {time.strftime('%b %d %H:%M', time.localtime(p.stat().st_mtime))}  "
+            f"{p.parent.name[-12:]:>12}  {p.stem[:8]}  \"{first}\"")
+
+
 def summary(sessions):
     files = [p for p in OUT.rglob("*") if p.is_file()]
     found = {k: v for k, v in redactions.items() if v}  # before the previews below add to it
     lines = [f"collected from {VILLAGE} and {len(sessions)} chat session(s) into {OUT}:"]
-    for p in reversed(sessions):
-        first = next((m[2] for m in chat_messages(p) if m[1] == "Jason"), "")
-        first = scrub(" ".join(first.split()))[:70]
-        lines.append(f"    {time.strftime('%b %d %H:%M', time.localtime(p.stat().st_mtime))}  "
-                     f"{p.parent.name[-12:]:>12}  {p.stem[:8]}  \"{first}\"")
+    lines += [preview(p) for p in reversed(sessions)]
+    if skipped:
+        lines.append(f"  skipped {len(skipped)} home-folder chat(s) as not village/crypto:")
+        lines += [preview(p) for p in sorted(skipped, key=lambda p: -p.stat().st_mtime)]
     lines.append(f"  briefing.md: {(OUT / 'briefing.md').stat().st_size // 1024} KB (always loaded)")
     for sub in ("docs", "chats", "logs"):
         fs = [p for p in files if p.parent.name == sub]
