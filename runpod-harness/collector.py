@@ -19,7 +19,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 VILLAGE = Path(os.environ.get("VILLAGE_DIR", "~/trading")).expanduser()
-CHATS = Path("~/.claude/projects").expanduser() / str(VILLAGE).replace("/", "-")
+PROJECTS = Path("~/.claude/projects").expanduser()
+CHATS = PROJECTS / str(VILLAGE).replace("/", "-")  # chats started in the village folder: all count
+HOME_CHATS = PROJECTS / str(Path.home()).replace("/", "-")  # mixed projects: only village ones
+VILLAGE_WORDS = re.compile(r"(?i)village|playa|/trading\b")
+MIN_VILLAGE_MENTIONS = 5
 OUT = Path(__file__).parent / "memory"
 BRIEF_DOCS = ["TRADER-PROFILE.md", "ABOUT_PLAYA.md"]
 RECENT_DAYS = 3
@@ -88,6 +92,16 @@ def chat_messages(path):
             yield entry.get("timestamp", ""), "Jason" if role == "user" else "Claude", text
 
 
+def village_sessions():
+    """Every chat in the village folder, plus home-folder chats that are clearly about the village."""
+    found = list(CHATS.glob("*.jsonl")) if CHATS.is_dir() else []
+    for p in HOME_CHATS.glob("*.jsonl") if HOME_CHATS.is_dir() and HOME_CHATS != CHATS else []:
+        text = "\n".join(m[2] for m in chat_messages(p))
+        if len(VILLAGE_WORDS.findall(text)) >= MIN_VILLAGE_MENTIONS:
+            found.append(p)
+    return sorted(found, key=lambda p: p.stat().st_mtime)
+
+
 def fmt(ts, speaker, text, limit):
     text = text if len(text) <= limit else text[:limit] + " [...]"
     return f"[{ts[:16].replace('T', ' ')}] {speaker}: {text}"
@@ -106,7 +120,7 @@ def build():
     # archive: every top-level doc, every chat session (text only), log tails
     for p in village_files(".md"):
         (OUT / "archive/docs" / p.name).write_text(scrub(read(p)))
-    sessions = sorted(CHATS.glob("*.jsonl"), key=lambda p: p.stat().st_mtime) if CHATS.is_dir() else []
+    sessions = village_sessions()
     recent_chat, budget = [], CHAT_ARCHIVE_CHARS
     for p in reversed(sessions):  # newest first, so the cap drops the oldest
         msgs = list(chat_messages(p))
@@ -150,17 +164,22 @@ def build():
         room -= len(line) + 2
     (OUT / "briefing.md").write_text(
         head + "\n\n## Recent village chat (oldest first)\n" + "\n\n".join(reversed(chat)))
-    return summary(len(sessions))
+    return summary(sessions)
 
 
-def summary(n_sessions):
+def summary(sessions):
     files = [p for p in OUT.rglob("*") if p.is_file()]
-    lines = [f"collected from {VILLAGE} and {n_sessions} chat session(s) into {OUT}:",
-             f"  briefing.md: {(OUT / 'briefing.md').stat().st_size // 1024} KB (always loaded)"]
+    found = {k: v for k, v in redactions.items() if v}  # before the previews below add to it
+    lines = [f"collected from {VILLAGE} and {len(sessions)} chat session(s) into {OUT}:"]
+    for p in reversed(sessions):
+        first = next((m[2] for m in chat_messages(p) if m[1] == "Jason"), "")
+        first = scrub(" ".join(first.split()))[:70]
+        lines.append(f"    {time.strftime('%b %d %H:%M', time.localtime(p.stat().st_mtime))}  "
+                     f"{p.parent.name[-12:]:>12}  {p.stem[:8]}  \"{first}\"")
+    lines.append(f"  briefing.md: {(OUT / 'briefing.md').stat().st_size // 1024} KB (always loaded)")
     for sub in ("docs", "chats", "logs"):
         fs = [p for p in files if p.parent.name == sub]
         lines.append(f"  archive/{sub}: {len(fs)} files, {sum(p.stat().st_size for p in fs) // 1024} KB")
-    found = {k: v for k, v in redactions.items() if v}
     lines.append("  secrets redacted: " + (", ".join(f"{v} {k}" for k, v in found.items()) or "none found"))
     return "\n".join(lines)
 
