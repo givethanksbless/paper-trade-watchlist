@@ -80,7 +80,7 @@ def feed(base, email, password, model, num_ctx):
     except Exception as e:
         log(f"could not load the briefing into private-chat ({e}) - it still has your profile")
 
-    files = sorted((memory / "archive").rglob("*.md")) + sorted((memory / "archive").rglob("*.txt"))
+    files = sorted((memory / "archive").rglob("*.md"))
     if not files:
         return
     kb = call(f"{base}/api/v1/knowledge/create", token,
