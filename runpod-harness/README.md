@@ -46,8 +46,11 @@ Set once on your computer (saved in ~/.zshrc like the API key): `CHAT_EMAIL` and
   chat history (read-only), strips secrets, and writes `memory/`; `feeder.py` then loads
   `memory/briefing.md` (trader docs + last 3 days) into `private-chat` and uploads
   `memory/archive/` as the "Village" knowledge base - type `#Village` in a chat to search it.
-  The library is indexed on the GPU with `nomic-embed-text`, which the watchdog pulls; the
+  The library is indexed on the GPU with `nomic-embed-text`, which the watchdog pulls, in
+  batches of 64 with 2000-character chunks; the feeder logs progress every 10 files. The
   watchdog only counts the chat model as activity, so indexing doesn't hold the pod open.
+- also gets Claude Code's own memory notes about the village (`~/.claude/projects/*/memory`),
+  in the briefing and the archive.
 
 The collector never reads files whose names look like secrets (.env, *secret*, *.pem, *.b64,
 ...) and redacts key-like text (API keys, bot tokens, wallet keys, `password=...`) in what it

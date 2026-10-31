@@ -85,12 +85,16 @@ def feed(base, email, password, model, num_ctx):
         return
     kb = call(f"{base}/api/v1/knowledge/create", token,
               body={"name": "Village", "description": "Read-only copy of the village: docs, chats, logs"})
-    done = 0
-    for p in files:
+    done, start = 0, time.time()
+    log(f"indexing {len(files)} files for #Village ({sum(p.stat().st_size for p in files) // 1024} KB)")
+    for n, p in enumerate(files, 1):
         try:
             fid = upload(base, token, p)
             call(f"{base}/api/v1/knowledge/{kb['id']}/file/add", token, body={"file_id": fid}, timeout=600)
             done += 1
         except Exception as e:
             log(f"skipped {p.name}: {e}")
-    log(f"Village library ready: {done}/{len(files)} files - type #Village in a chat to search it")
+        if n % 10 == 0:
+            log(f"  {n}/{len(files)} files after {(time.time() - start) / 60:.1f} min")
+    log(f"Village library ready: {done}/{len(files)} files in {(time.time() - start) / 60:.1f} min "
+        "- type #Village in a chat to search it")
