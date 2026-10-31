@@ -51,4 +51,7 @@ Set once on your computer (saved in ~/.zshrc like the API key): `CHAT_EMAIL` and
 
 The collector never reads files whose names look like secrets (.env, *secret*, *.pem, *.b64,
 ...) and redacts key-like text (API keys, bot tokens, wallet keys, `password=...`) in what it
-copies. `memory/` is git-ignored. Run `python3 pod.py collect` to see exactly what would be sent.
+copies. Every village chat it sees is also kept in `chat-history/`, because Claude Code
+deletes chats after 30 days by default; that folder is the permanent record, so don't delete it.
+`memory/` and `chat-history/` are git-ignored. Run `python3 pod.py collect` to see exactly what
+would be sent.

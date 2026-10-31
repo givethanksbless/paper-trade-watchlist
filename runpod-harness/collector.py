@@ -9,6 +9,8 @@ names look like secrets are never read.
 
 memory/briefing.md   always loaded into private-chat: trader docs + the last few days
 memory/archive/      searchable in the chat as #Village: all docs, full chat history, logs
+chat-history/        permanent scrubbed copy of every village chat ever seen; Claude Code deletes
+                     chats after 30 days by default, this copy keeps them for the archive
 """
 import json
 import os
@@ -26,6 +28,7 @@ VILLAGE_WORDS = re.compile(r"(?i)village|playa|/trading\b|crypto|bitcoin|\bbtc\b
                            r"futures|backtest|forward.?test|hyperliquid|weex|binance|bybit|altcoin|delisting")
 MIN_VILLAGE_MENTIONS = 5
 OUT = Path(__file__).parent / "memory"
+CHAT_CACHE = Path(__file__).parent / "chat-history"  # never wiped, unlike memory/
 BRIEF_DOCS = ["TRADER-PROFILE.md", "ABOUT_PLAYA.md"]
 RECENT_DAYS = 3
 BRIEF_CHARS = 40_000  # ~10K tokens, leaves room in private-chat's 32K context
@@ -140,15 +143,23 @@ def build():
     for p in village_files(".md"):
         write_parts("docs", p.name, scrub(read(p)))
     sessions = village_sessions()
-    recent_chat, budget = [], CHAT_ARCHIVE_CHARS
-    for p in reversed(sessions):  # newest first, so the cap drops the oldest
+    recent_chat = []
+    CHAT_CACHE.mkdir(exist_ok=True)
+    for p in sessions:  # refresh the permanent copy of every chat Claude Code still has
         msgs = list(chat_messages(p))
         recent_chat += [(m[0], i, m[1], m[2]) for i, m in enumerate(msgs) if m[0] >= cutoff_iso]
         text = scrub("\n\n".join(fmt(*m, 4000) for m in msgs))
+        if text:
+            cached = CHAT_CACHE / f"chat-{p.stem[:8]}.md"
+            cached.write_text(text)
+            os.utime(cached, (p.stat().st_mtime, p.stat().st_mtime))
+    budget = CHAT_ARCHIVE_CHARS
+    for cached in sorted(CHAT_CACHE.glob("chat-*.md"), key=lambda c: -c.stat().st_mtime):
+        text = cached.read_text()  # newest first, so the cap drops the oldest
         text = text[-min(SESSION_ARCHIVE_CHARS, max(budget, 0)):] if budget > 0 else ""
         budget -= len(text)
         if text:
-            write_parts("chats", f"chat-{p.stem[:8]}.md", text)
+            write_parts("chats", cached.name, text)
     logs, budget = village_files(".log", ".jsonl"), LOG_ARCHIVE_CHARS
     for p in sorted(logs, key=lambda p: -p.stat().st_mtime):
         text = scrub(read(p, LOG_TAIL_CHARS))[:budget]
@@ -202,6 +213,10 @@ def summary(sessions):
     if skipped:
         lines.append(f"  skipped {len(skipped)} home-folder chat(s) as not village/crypto:")
         lines += [preview(p) for p in sorted(skipped, key=lambda p: -p.stat().st_mtime)]
+    live = {f"chat-{p.stem[:8]}.md" for p in sessions}
+    kept = [c for c in CHAT_CACHE.glob("chat-*.md") if c.name not in live]
+    lines.append(f"  chat-history: {len(live) + len(kept)} chats kept permanently"
+                 + (f" ({len(kept)} already deleted by Claude Code, kept here)" if kept else ""))
     lines.append(f"  briefing.md: {(OUT / 'briefing.md').stat().st_size // 1024} KB (always loaded)")
     for sub in ("docs", "chats", "logs"):
         fs = [p for p in files if p.parent.name == sub]

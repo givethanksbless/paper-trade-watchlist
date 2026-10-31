@@ -9,8 +9,9 @@ Jason has no coding background. Every reply:
 ## Observational only (the village and the VPS)
 - The village (`~/trading` on Jason's Mac, the agents on his Vultr VPS) and everything else on
   that VPS are READ-ONLY. Never change, restart, fix or delete anything there, even if broken.
-- `runpod-harness/collector.py` only reads them; its copies go to `runpod-harness/memory/`,
-  which is git-ignored and must never be committed (it holds private trading data).
+- `runpod-harness/collector.py` only reads them; its copies go to `runpod-harness/memory/` and
+  `runpod-harness/chat-history/`, which are git-ignored and must never be committed (private
+  trading data). chat-history/ is the only copy of chats Claude Code has since deleted.
 
 ## Money safety (Runpod)
 - Ask before anything that costs money. Never leave a pod running.
