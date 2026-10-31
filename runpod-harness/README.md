@@ -1,8 +1,8 @@
 # Runpod private-chat harness
 
-Open WebUI + Ollama on one 48 GB GPU (A6000 or A40 at ~$0.33-0.35/hr; L40, RTX 6000 Ada or
-L40S at ~$0.69-0.79/hr if those are taken), with a watchdog that deletes the pod when idle
-or past a time cap. Needs `RUNPOD_API_KEY`.
+Open WebUI + Ollama on one 48 GB GPU (A6000 or A40, ~$0.33-0.35/hr; pricier 48 GB cards are
+left out, so launch may retry for a while when both are taken), with a watchdog that deletes
+the pod when idle or past a time cap. Needs `RUNPOD_API_KEY`.
 
 Model: `huihui_ai/qwen3.5-abliterated:27b-Claude-q8_0` (27B, 8-bit, 30 GB download). To
 change it, edit `MODEL` in pod.py and make sure `GPU_TYPES` has enough memory for it.
@@ -46,6 +46,8 @@ Set once on your computer (saved in ~/.zshrc like the API key): `CHAT_EMAIL` and
   chat history (read-only), strips secrets, and writes `memory/`; `feeder.py` then loads
   `memory/briefing.md` (trader docs + last 3 days) into `private-chat` and uploads
   `memory/archive/` as the "Village" knowledge base - type `#Village` in a chat to search it.
+  The library is indexed on the GPU with `nomic-embed-text`, which the watchdog pulls; the
+  watchdog only counts the chat model as activity, so indexing doesn't hold the pod open.
 
 The collector never reads files whose names look like secrets (.env, *secret*, *.pem, *.b64,
 ...) and redacts key-like text (API keys, bot tokens, wallet keys, `password=...`) in what it

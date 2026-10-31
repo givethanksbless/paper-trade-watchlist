@@ -15,6 +15,7 @@ import time
 import urllib.request
 
 MODEL = os.environ.get("MODEL", "huihui_ai/qwen3.5-abliterated:27b-Claude-q8_0")
+EMBED_MODEL = os.environ.get("EMBED_MODEL", "")  # indexes uploaded files on the GPU
 NUM_CTX = 32768  # room for the profile and notes; Ollama's default is much smaller
 IDLE_SEC = float(os.environ.get("IDLE_MIN", "30")) * 60
 MAX_SEC = float(os.environ.get("MAX_HOURS", "3")) * 3600
@@ -69,6 +70,18 @@ def model_loaded():
     return any(m.get("name", "").startswith(chat) for m in json.loads(out).get("models") or [])
 
 
+def pull_embed_model():
+    # one try only and failures only log: without it, #Village indexing falls back to being slow
+    if not EMBED_MODEL:
+        return
+    try:
+        http("POST", f"{OLLAMA}/api/pull", {"model": EMBED_MODEL, "name": EMBED_MODEL, "stream": False},
+             timeout=900)
+        log(f"pulled {EMBED_MODEL} for #Village indexing")
+    except Exception as e:
+        log(f"could not pull {EMBED_MODEL}: {e}")
+
+
 def create_profile_model():
     # failures only log: a missing profile must never take the pod down
     try:
@@ -119,6 +132,7 @@ def main():
             log(f"pull failed: {e}; retrying in 30s")
             time.sleep(30)
 
+    pull_embed_model()
     create_profile_model()
     last_active = time.time()
     while True:
