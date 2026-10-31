@@ -37,6 +37,9 @@ EMBED_MODEL = "nomic-embed-text"  # small model that indexes the #Village librar
 API = "https://rest.runpod.io/v1"
 START_MIN = 15  # guard deletes a pod whose container hasn't started by then
 LAUNCH_TRIES = 20  # one a minute while no GPU is free; failed tries cost nothing
+# each try asks the cheaper community hosts first, then Runpod's own data centers
+# (A6000/A40: ~$0.33-0.35/hr community, ~$0.59/hr secure)
+CLOUDS = ["COMMUNITY", "SECURE"]
 
 
 def start_cmd(max_hours):
@@ -61,7 +64,7 @@ def login():
     return (email, password) if email and password else None
 
 
-def pod_spec(idle_min, max_hours):
+def pod_spec(idle_min, max_hours, cloud="COMMUNITY"):
     env = {"MODEL": MODEL, "IDLE_MIN": str(idle_min), "MAX_HOURS": str(max_hours),
            "DEFAULT_MODELS": "private-chat",  # Open WebUI preselects it in every chat
            "EMBED_MODEL": EMBED_MODEL, "RAG_EMBEDDING_ENGINE": "ollama", "RAG_EMBEDDING_MODEL": EMBED_MODEL}
@@ -72,7 +75,7 @@ def pod_spec(idle_min, max_hours):
         "imageName": IMAGE,
         "gpuTypeIds": GPU_TYPES,
         "gpuCount": 1,
-        "cloudType": "COMMUNITY",
+        "cloudType": cloud,
         "containerDiskInGb": 80,
         "volumeInGb": 0,
         "ports": ["8080/http"],
@@ -127,20 +130,25 @@ def launch(idle_min, max_hours):
         print(collector.build(), flush=True)
     else:
         print("CHAT_EMAIL/CHAT_PASSWORD not set: no fixed login and no village feed this time", flush=True)
+    pod = None
     for i in range(1, LAUNCH_TRIES + 1):
-        try:
-            pod = api("POST", "/pods", pod_spec(idle_min, max_hours))
+        for cloud in CLOUDS:
+            try:
+                pod = api("POST", "/pods", pod_spec(idle_min, max_hours, cloud))
+                break
+            except urllib.error.HTTPError as e:
+                if e.code != 500:
+                    raise
+        if pod:
             break
-        except urllib.error.HTTPError as e:
-            if e.code != 500:
-                raise
-            print(time.strftime("%H:%M:%S"), f"try {i}/{LAUNCH_TRIES}: no GPU free yet, "
-                  "retrying in 60s (costs nothing)", flush=True)
-            time.sleep(60)
+        print(time.strftime("%H:%M:%S"), f"try {i}/{LAUNCH_TRIES}: no GPU free yet, "
+              "retrying in 60s (costs nothing)", flush=True)
+        time.sleep(60)
     else:
         sys.exit("no GPU became free - nothing was created, try again later")
     time.sleep(5)
-    print(f"\npod {pod['id']} created on {gpu_name(pod['id'])} at ${pod.get('costPerHr')}/hr\n"
+    print(f"\npod {pod['id']} created on {gpu_name(pod['id'])} ({cloud.lower()} cloud) "
+          f"at ${pod.get('costPerHr')}/hr\n"
           f"chat link (ready in ~10-15 min): https://{pod['id']}-8080.proxy.runpod.net\n"
           f"Leave this window open: guard is now watching and stops once the pod is gone.\n"
           f"(Closing it is safe too - the pod still deletes itself.)\n", flush=True)
