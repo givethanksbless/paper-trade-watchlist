@@ -32,6 +32,7 @@ CHAT_ARCHIVE_CHARS = 5_000_000
 SESSION_ARCHIVE_CHARS = 1_500_000  # per chat; long chats keep their most recent part
 LOG_TAIL_CHARS = 100_000  # per log file
 LOG_ARCHIVE_CHARS = 1_000_000
+PART_CHARS = 150_000  # archive files are split so each upload finishes inside Runpod's 100 s proxy limit
 
 SECRET_NAME = re.compile(r"(?i)(\.env|secret|credential|passw|token|wallet|keystore|id_rsa|"
                          r"\.pem$|\.key$|\.b64$|\.p12$)")
@@ -60,6 +61,20 @@ def scrub(text):
     text, n = KEY_VALUE.subn(lambda m: m.group(1) + "[REDACTED]", text)
     redactions["name=value secret"] = redactions.get("name=value secret", 0) + n
     return text
+
+
+def write_parts(folder, name, text):
+    """Write text as name.md, or name-part01.md, name-part02.md, ... cut at line breaks."""
+    stem, parts = name.rsplit(".", 1)[0], []
+    while len(text) > PART_CHARS:
+        cut = text.rfind("\n", 0, PART_CHARS)
+        cut = cut if cut > PART_CHARS // 2 else PART_CHARS
+        parts.append(text[:cut])
+        text = text[cut:]
+    parts.append(text)
+    for i, part in enumerate(parts, 1):
+        suffix = f"-part{i:02d}" if len(parts) > 1 else ""
+        (OUT / "archive" / folder / f"{stem}{suffix}.md").write_text(part)
 
 
 def read(path, tail=None):
@@ -120,7 +135,7 @@ def build():
 
     # archive: every top-level doc, every chat session (text only), log tails
     for p in village_files(".md"):
-        (OUT / "archive/docs" / p.name).write_text(scrub(read(p)))
+        write_parts("docs", p.name, scrub(read(p)))
     sessions = village_sessions()
     recent_chat, budget = [], CHAT_ARCHIVE_CHARS
     for p in reversed(sessions):  # newest first, so the cap drops the oldest
@@ -130,13 +145,13 @@ def build():
         text = text[-min(SESSION_ARCHIVE_CHARS, max(budget, 0)):] if budget > 0 else ""
         budget -= len(text)
         if text:
-            (OUT / "archive/chats" / f"chat-{p.stem[:8]}.md").write_text(text)
+            write_parts("chats", f"chat-{p.stem[:8]}.md", text)
     logs, budget = village_files(".log", ".jsonl"), LOG_ARCHIVE_CHARS
     for p in sorted(logs, key=lambda p: -p.stat().st_mtime):
         text = scrub(read(p, LOG_TAIL_CHARS))[:budget]
         budget -= len(text)
         if text:
-            (OUT / "archive/logs" / (p.name + ".txt")).write_text(text)
+            write_parts("logs", p.name + ".md", text)
 
     # briefing: trader docs, what changed, recent log lines, then as much recent chat as fits
     parts = [f"# Village briefing\nRead-only copy collected {time.strftime('%Y-%m-%d %H:%M')} "
