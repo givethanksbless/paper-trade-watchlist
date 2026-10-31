@@ -28,7 +28,8 @@ OUT = Path(__file__).parent / "memory"
 BRIEF_DOCS = ["TRADER-PROFILE.md", "ABOUT_PLAYA.md"]
 RECENT_DAYS = 3
 BRIEF_CHARS = 40_000  # ~10K tokens, leaves room in private-chat's 32K context
-CHAT_ARCHIVE_CHARS = 3_000_000
+CHAT_ARCHIVE_CHARS = 5_000_000
+SESSION_ARCHIVE_CHARS = 1_500_000  # per chat; long chats keep their most recent part
 LOG_TAIL_CHARS = 100_000  # per log file
 LOG_ARCHIVE_CHARS = 1_000_000
 
@@ -125,7 +126,8 @@ def build():
     for p in reversed(sessions):  # newest first, so the cap drops the oldest
         msgs = list(chat_messages(p))
         recent_chat += [(m[0], i, m[1], m[2]) for i, m in enumerate(msgs) if m[0] >= cutoff_iso]
-        text = scrub("\n\n".join(fmt(*m, 4000) for m in msgs))[:budget]
+        text = scrub("\n\n".join(fmt(*m, 4000) for m in msgs))
+        text = text[-min(SESSION_ARCHIVE_CHARS, max(budget, 0)):] if budget > 0 else ""
         budget -= len(text)
         if text:
             (OUT / "archive/chats" / f"chat-{p.stem[:8]}.md").write_text(text)
