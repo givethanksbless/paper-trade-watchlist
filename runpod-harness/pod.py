@@ -31,9 +31,9 @@ from pathlib import Path
 
 IMAGE = "ghcr.io/open-webui/open-webui:ollama"
 MODEL = "huihui_ai/qwen3.5-abliterated:27b-Claude-q8_0"  # 30 GB download
-# 48 GB cards, cheapest first; Runpod takes the first one free (~$0.33-0.79/hr)
-GPU_TYPES = ["NVIDIA RTX A6000", "NVIDIA A40", "NVIDIA L40", "NVIDIA RTX 6000 Ada Generation",
-             "NVIDIA L40S"]
+# 48 GB cards at ~$0.33-0.35/hr; Runpod takes whichever is free (pricier 48 GB cards left out on purpose)
+GPU_TYPES = ["NVIDIA RTX A6000", "NVIDIA A40"]
+EMBED_MODEL = "nomic-embed-text"  # small model that indexes the #Village library on the GPU
 API = "https://rest.runpod.io/v1"
 START_MIN = 15  # guard deletes a pod whose container hasn't started by then
 LAUNCH_TRIES = 20  # one a minute while no GPU is free; failed tries cost nothing
@@ -63,7 +63,8 @@ def login():
 
 def pod_spec(idle_min, max_hours):
     env = {"MODEL": MODEL, "IDLE_MIN": str(idle_min), "MAX_HOURS": str(max_hours),
-           "DEFAULT_MODELS": "private-chat"}  # Open WebUI preselects it in every chat
+           "DEFAULT_MODELS": "private-chat",  # Open WebUI preselects it in every chat
+           "EMBED_MODEL": EMBED_MODEL, "RAG_EMBEDDING_ENGINE": "ollama", "RAG_EMBEDDING_MODEL": EMBED_MODEL}
     if login():  # Open WebUI creates this admin on first start and turns sign-up off
         env.update(WEBUI_ADMIN_EMAIL=login()[0], WEBUI_ADMIN_PASSWORD=login()[1], WEBUI_ADMIN_NAME="Jason")
     return {
