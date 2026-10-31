@@ -30,6 +30,7 @@ MIN_VILLAGE_MENTIONS = 5
 OUT = Path(__file__).parent / "memory"
 CHAT_CACHE = Path(__file__).parent / "chat-history"  # never wiped, unlike memory/
 BRIEF_DOCS = ["TRADER-PROFILE.md", "ABOUT_PLAYA.md"]
+NOTES_CHARS = 12_000  # Claude Code's own memory notes about the village, in the briefing
 RECENT_DAYS = 3
 BRIEF_CHARS = 40_000  # ~10K tokens, leaves room in private-chat's 32K context
 CHAT_ARCHIVE_CHARS = 5_000_000
@@ -124,6 +125,16 @@ def village_sessions():
     return sorted(found, key=lambda p: p.stat().st_mtime)
 
 
+def village_notes():
+    """Claude Code's memory notes (projects/*/memory/*.md): all from the village folder's project,
+    and from the home folder's project only notes that are about the village or crypto."""
+    notes = sorted((CHATS / "memory").glob("*.md")) if (CHATS / "memory").is_dir() else []
+    if HOME_CHATS != CHATS and (HOME_CHATS / "memory").is_dir():
+        notes += [p for p in sorted((HOME_CHATS / "memory").glob("*.md"))
+                  if len(VILLAGE_WORDS.findall(read(p))) >= 3]
+    return [p for p in notes if not SECRET_NAME.search(p.name)]
+
+
 def fmt(ts, speaker, text, limit):
     text = text if len(text) <= limit else text[:limit] + " [...]"
     return f"[{ts[:16].replace('T', ' ')}] {speaker}: {text}"
@@ -142,6 +153,9 @@ def build():
     # archive: every top-level doc, every chat session (text only), log tails
     for p in village_files(".md"):
         write_parts("docs", p.name, scrub(read(p)))
+    notes = village_notes()
+    for p in notes:
+        write_parts("docs", f"claude-note-{p.parent.parent.name[-8:]}-{p.name}", scrub(read(p)))
     sessions = village_sessions()
     recent_chat = []
     CHAT_CACHE.mkdir(exist_ok=True)
@@ -175,6 +189,9 @@ def build():
     for name in BRIEF_DOCS:
         if (VILLAGE / name).is_file():
             parts.append(f"## {name}\n" + scrub(read(VILLAGE / name)))
+    if notes:
+        text = "\n\n".join(f"### {p.name}\n{read(p).strip()}" for p in notes)
+        parts.append("## Claude's memory notes about the village\n" + scrub(text)[:NOTES_CHARS])
     changed = sorted((p for p in VILLAGE.iterdir() if p.is_file() and p.stat().st_mtime > cutoff
                       and not SECRET_NAME.search(p.name)), key=lambda p: -p.stat().st_mtime)
     parts.append("## Village files changed recently\n" + "\n".join(
@@ -217,6 +234,9 @@ def summary(sessions):
     kept = [c for c in CHAT_CACHE.glob("chat-*.md") if c.name not in live]
     lines.append(f"  chat-history: {len(live) + len(kept)} chats kept permanently"
                  + (f" ({len(kept)} already deleted by Claude Code, kept here)" if kept else ""))
+    notes = village_notes()
+    lines.append(f"  village notes (Claude's memory): {len(notes)} file(s)"
+                 + (": " + ", ".join(p.name for p in notes[:8]) if notes else ""))
     lines.append(f"  briefing.md: {(OUT / 'briefing.md').stat().st_size // 1024} KB (always loaded)")
     for sub in ("docs", "chats", "logs"):
         fs = [p for p in files if p.parent.name == sub]

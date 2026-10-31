@@ -67,7 +67,9 @@ def login():
 def pod_spec(idle_min, max_hours, cloud="COMMUNITY"):
     env = {"MODEL": MODEL, "IDLE_MIN": str(idle_min), "MAX_HOURS": str(max_hours),
            "DEFAULT_MODELS": "private-chat",  # Open WebUI preselects it in every chat
-           "EMBED_MODEL": EMBED_MODEL, "RAG_EMBEDDING_ENGINE": "ollama", "RAG_EMBEDDING_MODEL": EMBED_MODEL}
+           "EMBED_MODEL": EMBED_MODEL, "RAG_EMBEDDING_ENGINE": "ollama", "RAG_EMBEDDING_MODEL": EMBED_MODEL,
+           # fewer, batched embedding calls: the 78-file library took 34 min with the defaults
+           "RAG_EMBEDDING_BATCH_SIZE": "64", "CHUNK_SIZE": "2000", "CHUNK_OVERLAP": "200"}
     if login():  # Open WebUI creates this admin on first start and turns sign-up off
         env.update(WEBUI_ADMIN_EMAIL=login()[0], WEBUI_ADMIN_PASSWORD=login()[1], WEBUI_ADMIN_NAME="Jason")
     return {
