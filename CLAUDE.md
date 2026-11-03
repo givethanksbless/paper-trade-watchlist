@@ -12,6 +12,8 @@ Jason has no coding background. Every reply:
 - `runpod-harness/collector.py` only reads them; its copies go to `runpod-harness/memory/` and
   `runpod-harness/chat-history/`, which are git-ignored and must never be committed (private
   trading data). chat-history/ is the only copy of chats Claude Code has since deleted.
+- `runpod-harness/private-chats/` (git-ignored, never commit) is the only copy of Jason's
+  private-chat conversations: pods are deleted, feeder.py saves chats there and restores them.
 
 ## Money safety (Runpod)
 - Ask before anything that costs money. Never leave a pod running.

@@ -3,16 +3,22 @@
 1. waits for Open WebUI, signs in with CHAT_EMAIL / CHAT_PASSWORD (the fixed admin account)
 2. waits for the watchdog's private-chat model, then rebuilds it with profile + briefing
 3. uploads memory/archive into a knowledge base called "Village" (#Village in the chat)
+Alongside: restores your saved private chats into the new pod, then keeps copying every chat
+to private-chats/ on this computer every 2 minutes, so the next pod can pick up where you left off.
 
 Nothing here can delete or stop the pod; a failed step only prints a warning.
 """
 import json
+import os
+import threading
 import time
 import urllib.request
 import uuid
 from pathlib import Path
 
 HERE = Path(__file__).parent
+CHATS_DIR = HERE / "private-chats"  # the only copy of your private conversations; pods are deleted
+SAVE_EVERY = 120
 UA = {"User-Agent": "runpod-harness/1.0"}  # Cloudflare-fronted endpoints reject Python's default
 
 
@@ -52,6 +58,51 @@ def upload(base, token, path):
                 ctype=f"multipart/form-data; boundary={boundary}", timeout=600)["id"]
 
 
+def write_chat(chat):
+    CHATS_DIR.mkdir(exist_ok=True)
+    tmp = CHATS_DIR / f".{chat['id']}.tmp"
+    tmp.write_text(json.dumps(chat))
+    os.replace(tmp, CHATS_DIR / f"{chat['id']}.json")  # never leaves a half-written file
+
+
+def restore_chats(base, token):
+    """Load saved chats into the new pod; each one is re-saved under its new id before the old
+    file is removed, so a failure at any point never loses a chat."""
+    saved = sorted(CHATS_DIR.glob("*.json")) if CHATS_DIR.is_dir() else []
+    done = 0
+    for p in saved:
+        try:
+            old = json.loads(p.read_text())
+            new = call(f"{base}/api/v1/chats/import", token, body={
+                "chat": old.get("chat", {}), "meta": old.get("meta") or {}, "pinned": old.get("pinned", False),
+                "folder_id": None, "created_at": old.get("created_at"), "updated_at": old.get("updated_at")})
+            write_chat(new)
+            if new["id"] != old.get("id"):
+                p.unlink()
+            done += 1
+        except Exception as e:
+            log(f"could not restore chat {p.stem}: {e}")
+    if saved:
+        log(f"restored {done}/{len(saved)} saved chats - they're in the sidebar")
+
+
+def save_chats(base, token):
+    """Copy every chat to this computer every SAVE_EVERY seconds until the program ends."""
+    seen = {}
+    while True:
+        try:
+            chats = call(f"{base}/api/v1/chats/all", token, timeout=120) or []
+            changed = [c for c in chats if seen.get(c["id"]) != c.get("updated_at")]
+            for c in changed:
+                write_chat(c)
+                seen[c["id"]] = c.get("updated_at")
+            if changed:
+                log(f"saved {len(changed)} chat(s) to {CHATS_DIR}")
+        except Exception as e:
+            log(f"chat save failed ({e}) - will retry")
+        time.sleep(SAVE_EVERY)
+
+
 def feed(base, email, password, model, num_ctx):
     memory = HERE / "memory"
     auth = {}
@@ -62,6 +113,8 @@ def feed(base, email, password, model, num_ctx):
     if not wait_for("the chat page / sign-in", signed_in):
         return
     token = auth["token"]
+    restore_chats(base, token)
+    threading.Thread(target=save_chats, args=(base, token), daemon=True).start()
     log("signed in; waiting for private-chat (appears once the model has downloaded)")
 
     def has_private_chat():

@@ -63,3 +63,11 @@ copies. Every village chat it sees is also kept in `chat-history/`, because Clau
 deletes chats after 30 days by default; that folder is the permanent record, so don't delete it.
 `memory/` and `chat-history/` are git-ignored. Run `python3 pod.py collect` to see exactly what
 would be sent.
+
+## Your private chats carry over
+Pods are deleted, so the chat page's own history goes with them. While a pod runs, the
+launch window copies every chat to `private-chats/` on your computer every 2 minutes; the
+next launch loads them back into the new pod (they're in the sidebar) and adds them to the
+#Village library so the model can recall them. Keep the launch window open until it says
+"no pods left", or the last couple of minutes may not be saved. `private-chats/` is the
+only copy and is git-ignored.

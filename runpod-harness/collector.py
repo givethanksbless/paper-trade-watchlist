@@ -30,6 +30,7 @@ VILLAGE_WORDS = re.compile(r"(?i)village|playa|/trading\b|crypto|bitcoin|\bbtc\b
 MIN_VILLAGE_MENTIONS = 5
 OUT = Path(__file__).parent / "memory"
 CHAT_CACHE = Path(__file__).parent / "chat-history"  # never wiped, unlike memory/
+PRIVATE_CHATS = Path(__file__).parent / "private-chats"  # saved by feeder.py from past pods
 BRIEF_DOCS = ["TRADER-PROFILE.md", "ABOUT_PLAYA.md"]
 # the live village on the VPS, read over one gentle ssh call per run; set VPS_SSH=user@host to enable
 VPS_SSH = os.environ.get("VPS_SSH", "")
@@ -190,7 +191,7 @@ def build():
         raise SystemExit(f"village folder not found: {VILLAGE}")
     redactions.clear()
     shutil.rmtree(OUT, ignore_errors=True)
-    for sub in ("docs", "chats", "logs", "vps"):
+    for sub in ("docs", "chats", "logs", "vps", "private"):
         (OUT / "archive" / sub).mkdir(parents=True)
     cutoff = time.time() - RECENT_DAYS * 86400
     cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).isoformat()
@@ -219,6 +220,17 @@ def build():
         budget -= len(text)
         if text:
             write_parts("chats", cached.name, text)
+    for p in sorted(PRIVATE_CHATS.glob("*.json")) if PRIVATE_CHATS.is_dir() else []:
+        try:
+            c = json.loads(read(p))
+            msgs = (c.get("chat") or {}).get("messages") or []
+            text = "\n\n".join(f"{m.get('role', '?')}: {m.get('content', '')}" for m in msgs
+                                if isinstance(m, dict) and m.get("content"))
+            if text:
+                title = c.get("title") or (c.get("chat") or {}).get("title") or p.stem
+                write_parts("private", f"private-chat-{p.stem[:8]}.md", scrub(f"# Past private chat: {title}\n\n{text}"))
+        except (ValueError, OSError):
+            continue
     vps_status, vps_files = read_vps()
     for path, text in vps_files.items():
         write_parts("vps", path.replace("/", "__") + ".md", scrub(text))
@@ -299,7 +311,7 @@ def summary(sessions):
     vps = [p for p in files if p.parent.name == "vps"]
     lines.append(f"  VPS: {len(vps)} file(s), {sum(p.stat().st_size for p in vps) // 1024} KB from {VPS_SSH}"
                  if vps else f"  VPS: {vps_note}")
-    for sub in ("docs", "chats", "logs"):
+    for sub in ("docs", "chats", "logs", "private"):
         fs = [p for p in files if p.parent.name == sub]
         lines.append(f"  archive/{sub}: {len(fs)} files, {sum(p.stat().st_size for p in fs) // 1024} KB")
     lines.append("  secrets redacted: " + (", ".join(f"{v} {k}" for k, v in found.items()) or "none found"))
