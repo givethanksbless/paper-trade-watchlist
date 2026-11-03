@@ -51,6 +51,11 @@ Set once on your computer (saved in ~/.zshrc like the API key): `CHAT_EMAIL` and
   watchdog only counts the chat model as activity, so indexing doesn't hold the pod open.
 - also gets Claude Code's own memory notes about the village (`~/.claude/projects/*/memory`),
   in the briefing and the archive.
+- with `VPS_SSH=user@host` set, also gets the live village on the VPS: one read-only ssh call
+  per run (`nice -n 19`, 90 s limit) that prints service status, scheduled script names, and
+  the last 20 KB of the 40 newest log/json files under `/root/trading` from the last 3 days.
+  Names containing key/secret/token/env/wallet are never read; everything is scrubbed on the
+  Mac. If the VPS is slow or unreachable, the run just skips it.
 
 The collector never reads files whose names look like secrets (.env, *secret*, *.pem, *.b64,
 ...) and redacts key-like text (API keys, bot tokens, wallet keys, `password=...`) in what it

@@ -16,6 +16,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -30,6 +31,20 @@ MIN_VILLAGE_MENTIONS = 5
 OUT = Path(__file__).parent / "memory"
 CHAT_CACHE = Path(__file__).parent / "chat-history"  # never wiped, unlike memory/
 BRIEF_DOCS = ["TRADER-PROFILE.md", "ABOUT_PLAYA.md"]
+# the live village on the VPS, read over one gentle ssh call per run; set VPS_SSH=user@host to enable
+VPS_SSH = os.environ.get("VPS_SSH", "")
+VPS_DIR = os.environ.get("VPS_DIR", "/root/trading")
+VPS_FILES, VPS_TAIL = 40, 20_000  # newest data files from the last 3 days, last 20 KB of each
+VPS_BRIEF_CHARS = 8_000
+VPS_SCRIPT = r"""
+echo "=== STATUS"; uptime
+for s in microstructure-lab weex-bot telegram-relay; do echo "$s: $(systemctl is-active $s 2>/dev/null)"; done
+echo "=== SCHEDULED"; crontab -l 2>/dev/null | grep -v "^#" | grep -oE "[^ ]+[.](py|sh|js)" | sort -u
+cd "$1" || exit 0
+find . -maxdepth 3 -type f \( -name "*.log" -o -name "*.jsonl" -o -name "*.json" \) -mmin -4320 \
+  ! -iname "*key*" ! -iname "*secret*" ! -iname "*token*" ! -iname "*.env*" ! -iname "*wallet*" \
+  -printf "%T@ %p\n" | sort -rn | head -n "$2" | while read t p; do echo "=== FILE $p"; tail -c "$3" "$p"; echo; done
+"""
 JASON_PROFILE = Path("~/.claude/jason-profile.md").expanduser()  # Jason's own profile, read-only
 PROFILE_CHARS = 10_000
 NOTES_CHARS = 12_000  # Claude Code's own memory notes about the village, in the briefing
@@ -59,6 +74,7 @@ KEY_VALUE = re.compile(
     r"(?i)((?:api[_-]?key|secret|token|passw(?:or)?d|passphrase|private[_-]?key|auth[_-]?key)"
     r"[\w-]*[\\\"']*\s*[:=]\s*[\\\"']*)([^\s\"'\\,}]{8,})")
 redactions = {}
+vps_note = ""
 skipped = []  # home-folder chats left out, listed in the summary so the filter can be checked
 
 
@@ -137,6 +153,31 @@ def village_notes():
     return [p for p in notes if not SECRET_NAME.search(p.name)]
 
 
+def read_vps():
+    """One read-only, low-priority ssh call. Returns (status text, {path: text}) or (reason, {})."""
+    if not VPS_SSH:
+        return "skipped (VPS_SSH not set)", {}
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", VPS_SSH,
+           f"nice -n 19 timeout 90 sh -s -- {VPS_DIR} {VPS_FILES} {VPS_TAIL}"]
+    try:
+        out = subprocess.run(cmd, input=VPS_SCRIPT, capture_output=True, timeout=120,
+                             encoding="utf-8", errors="replace")
+    except Exception as e:
+        return f"skipped ({e})", {}
+    if out.returncode != 0 and "=== STATUS" not in out.stdout:
+        return f"skipped (ssh exit {out.returncode}: {out.stderr.strip()[:120]})", {}
+    status, files, current = [], {}, None
+    for line in out.stdout.splitlines():
+        if line.startswith("=== FILE "):
+            current = line[9:].lstrip("./")
+            files[current] = []
+        elif current:
+            files[current].append(line)
+        else:
+            status.append(line)
+    return "\n".join(status), {k: "\n".join(v) for k, v in files.items()}
+
+
 def fmt(ts, speaker, text, limit):
     text = text if len(text) <= limit else text[:limit] + " [...]"
     return f"[{ts[:16].replace('T', ' ')}] {speaker}: {text}"
@@ -147,7 +188,7 @@ def build():
         raise SystemExit(f"village folder not found: {VILLAGE}")
     redactions.clear()
     shutil.rmtree(OUT, ignore_errors=True)
-    for sub in ("docs", "chats", "logs"):
+    for sub in ("docs", "chats", "logs", "vps"):
         (OUT / "archive" / sub).mkdir(parents=True)
     cutoff = time.time() - RECENT_DAYS * 86400
     cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).isoformat()
@@ -176,6 +217,9 @@ def build():
         budget -= len(text)
         if text:
             write_parts("chats", cached.name, text)
+    vps_status, vps_files = read_vps()
+    for path, text in vps_files.items():
+        write_parts("vps", path.replace("/", "__") + ".md", scrub(text))
     logs, budget = village_files(".log", ".jsonl"), LOG_ARCHIVE_CHARS
     for p in sorted(logs, key=lambda p: -p.stat().st_mtime):
         text = scrub(read(p, LOG_TAIL_CHARS))[:budget]
@@ -201,6 +245,11 @@ def build():
     parts.append("## Village files changed recently\n" + "\n".join(
         f"- {time.strftime('%m-%d %H:%M', time.localtime(p.stat().st_mtime))} {p.name} "
         f"({p.stat().st_size // 1024} KB)" for p in changed[:60]))
+    if vps_files or "=== STATUS" in vps_status:
+        recent = [f"### {path}\n" + "\n".join(line[:300] for line in text.splitlines()[-8:])
+                  for path, text in list(vps_files.items())[:10]]
+        parts.append("## Live village on the VPS (read-only snapshot)\n" +
+                     scrub(vps_status + "\n\n" + "\n".join(recent))[:VPS_BRIEF_CHARS])
     log_lines = []
     for p in [p for p in logs if p.stat().st_mtime > cutoff][:10]:
         tail = read(p, 6000).splitlines()[-15:]
@@ -216,6 +265,8 @@ def build():
         room -= len(line) + 2
     (OUT / "briefing.md").write_text(
         head + "\n\n## Recent village chat (oldest first)\n" + "\n\n".join(reversed(chat)))
+    global vps_note
+    vps_note = vps_status if vps_status.startswith("skipped") else "connected, no recent data files"
     return summary(sessions)
 
 
@@ -243,6 +294,9 @@ def summary(sessions):
     lines.append(f"  village notes (Claude's memory): {len(notes)} file(s)"
                  + (": " + ", ".join(p.name for p in notes[:8]) if notes else ""))
     lines.append(f"  briefing.md: {(OUT / 'briefing.md').stat().st_size // 1024} KB (always loaded)")
+    vps = [p for p in files if p.parent.name == "vps"]
+    lines.append(f"  VPS: {len(vps)} file(s), {sum(p.stat().st_size for p in vps) // 1024} KB from {VPS_SSH}"
+                 if vps else f"  VPS: {vps_note}")
     for sub in ("docs", "chats", "logs"):
         fs = [p for p in files if p.parent.name == sub]
         lines.append(f"  archive/{sub}: {len(fs)} files, {sum(p.stat().st_size for p in fs) // 1024} KB")
