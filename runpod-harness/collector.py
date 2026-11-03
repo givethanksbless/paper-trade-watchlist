@@ -147,6 +147,23 @@ def village_sessions():
     return sorted(found, key=lambda p: p.stat().st_mtime)
 
 
+def chat_turns(chat):
+    """(role, text) pairs of an Open WebUI chat. Newer versions keep the thread as a tree in
+    chat.history (messages by id, currentId = last message); older ones as a chat.messages list."""
+    def text(m):
+        c = m.get("content")
+        if isinstance(c, list):  # [{"type": "text", "text": ...}, ...]
+            c = " ".join(part.get("text", "") for part in c if isinstance(part, dict))
+        return c if isinstance(c, str) else ""
+    history = chat.get("history") or {}
+    by_id, node, thread = history.get("messages") or {}, history.get("currentId"), []
+    while node in by_id and len(thread) < 10_000:  # walk from the last message back to the first
+        thread.append(by_id[node])
+        node = by_id[node].get("parentId")
+    msgs = list(reversed(thread)) or [m for m in chat.get("messages") or [] if isinstance(m, dict)]
+    return [(m.get("role", "?"), text(m)) for m in msgs if text(m)]
+
+
 def village_notes():
     """Claude Code's memory notes (projects/*/memory/*.md): all from the village folder's project,
     and from the home folder's project only notes that are about the village or crypto."""
@@ -228,9 +245,7 @@ def build():
         except (ValueError, OSError):
             continue
         for i, c in enumerate(data if isinstance(data, list) else [data]):  # list = "Export Chats" file
-            msgs = (c.get("chat") or {}).get("messages") or []
-            text = "\n\n".join(f"{m.get('role', '?')}: {m.get('content', '')}" for m in msgs
-                                if isinstance(m, dict) and m.get("content"))
+            text = "\n\n".join(f"{role}: {t}" for role, t in chat_turns(c.get("chat") or {}))
             if text:
                 title = c.get("title") or (c.get("chat") or {}).get("title") or p.stem
                 past.append((c.get("updated_at") or 0, c.get("id") or f"{p.stem}-{i}",
