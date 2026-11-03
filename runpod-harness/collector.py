@@ -30,6 +30,8 @@ MIN_VILLAGE_MENTIONS = 5
 OUT = Path(__file__).parent / "memory"
 CHAT_CACHE = Path(__file__).parent / "chat-history"  # never wiped, unlike memory/
 BRIEF_DOCS = ["TRADER-PROFILE.md", "ABOUT_PLAYA.md"]
+JASON_PROFILE = Path("~/.claude/jason-profile.md").expanduser()  # Jason's own profile, read-only
+PROFILE_CHARS = 10_000
 NOTES_CHARS = 12_000  # Claude Code's own memory notes about the village, in the briefing
 RECENT_DAYS = 3
 BRIEF_CHARS = 40_000  # ~10K tokens, leaves room in private-chat's 32K context
@@ -186,6 +188,8 @@ def build():
              f"covering the last {RECENT_DAYS} days. Labels: 'Jason' = Jason's instructions, "
              "'Claude' = Claude's replies, 'village files/logs' = raw village output. "
              "For anything older or more detailed, the full archive is searchable as #Village."]
+    if JASON_PROFILE.is_file():
+        parts.append("## About Jason (his own profile)\n" + scrub(read(JASON_PROFILE))[:PROFILE_CHARS])
     for name in BRIEF_DOCS:
         if (VILLAGE / name).is_file():
             parts.append(f"## {name}\n" + scrub(read(VILLAGE / name)))
@@ -235,6 +239,7 @@ def summary(sessions):
     lines.append(f"  chat-history: {len(live) + len(kept)} chats kept permanently"
                  + (f" ({len(kept)} already deleted by Claude Code, kept here)" if kept else ""))
     notes = village_notes()
+    lines.append(f"  jason-profile.md: {'included' if JASON_PROFILE.is_file() else 'not found'}")
     lines.append(f"  village notes (Claude's memory): {len(notes)} file(s)"
                  + (": " + ", ".join(p.name for p in notes[:8]) if notes else ""))
     lines.append(f"  briefing.md: {(OUT / 'briefing.md').stat().st_size // 1024} KB (always loaded)")
