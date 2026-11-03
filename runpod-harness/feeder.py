@@ -127,20 +127,43 @@ def restore_chats(base, token):
             else " - your saved file is kept; import it by hand: Settings > Data Controls > Import Chats"))
 
 
+def items(x):
+    """Lists come bare or wrapped ({"items": [...]}, {"chats": [...]}, ...) depending on version."""
+    if isinstance(x, dict):
+        for key in ("items", "chats", "data"):
+            if isinstance(x.get(key), list):
+                return x[key]
+    return x if isinstance(x, list) else []
+
+
+def chat_summaries(base, token):
+    """id/title/updated_at of every chat, from the paged chat list (stable across versions)."""
+    found = {}
+    for page in range(1, 51):
+        batch = [c for c in items(call(f"{base}/api/v1/chats/?page={page}", token, timeout=120))
+                 if isinstance(c, dict) and c.get("id")]
+        new = [c for c in batch if c["id"] not in found]
+        if not new:  # empty page, or a version that ignores ?page and repeats the list
+            break
+        found.update((c["id"], c) for c in new)
+    return list(found.values())
+
+
 def save_chats(base, token):
-    """Copy every chat to this computer every SAVE_EVERY seconds until the program ends."""
+    """Copy every new or changed chat to this computer every SAVE_EVERY seconds until the program ends."""
     seen = {}
     while True:
         try:
-            chats = call(f"{base}/api/v1/chats/all", token, timeout=120) or []
-            changed = [c for c in chats if seen.get(c["id"]) != c.get("updated_at")]
+            changed = [c for c in chat_summaries(base, token) if seen.get(c["id"]) != c.get("updated_at")]
             for c in changed:
-                write_chat(c)
-                seen[c["id"]] = c.get("updated_at")
+                full = call(f"{base}/api/v1/chats/{c['id']}", token, timeout=120)
+                if isinstance(full, dict) and full.get("id"):
+                    write_chat(full)
+                    seen[c["id"]] = c.get("updated_at")
             if changed:
                 log(f"saved {len(changed)} chat(s) to {CHATS_DIR}")
         except Exception as e:
-            log(f"chat save failed ({e}) - will retry")
+            log(f"chat save failed ({why(e)}) - will retry")
         time.sleep(SAVE_EVERY)
 
 
