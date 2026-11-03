@@ -49,7 +49,9 @@ JASON_PROFILE = Path("~/.claude/jason-profile.md").expanduser()  # Jason's own p
 PROFILE_CHARS = 10_000
 NOTES_CHARS = 12_000  # Claude Code's own memory notes about the village, in the briefing
 RECENT_DAYS = 3
-BRIEF_CHARS = 40_000  # ~10K tokens, leaves room in private-chat's 32K context
+BRIEF_CHARS = 70_000  # ~18K tokens, leaves ~14K of private-chat's 32K context for the conversation
+CHAT_MIN_CHARS = 20_000  # recent village chat always gets at least this much of the briefing
+DOC_CHARS = 10_000  # per trader doc in the briefing; the full docs are in the archive
 CHAT_ARCHIVE_CHARS = 5_000_000
 SESSION_ARCHIVE_CHARS = 1_500_000  # per chat; long chats keep their most recent part
 LOG_TAIL_CHARS = 100_000  # per log file
@@ -236,7 +238,7 @@ def build():
         parts.append("## About Jason (his own profile)\n" + scrub(read(JASON_PROFILE))[:PROFILE_CHARS])
     for name in BRIEF_DOCS:
         if (VILLAGE / name).is_file():
-            parts.append(f"## {name}\n" + scrub(read(VILLAGE / name)))
+            parts.append(f"## {name}\n" + scrub(read(VILLAGE / name))[:DOC_CHARS])
     if notes:
         text = "\n\n".join(f"### {p.name}\n{read(p).strip()}" for p in notes)
         parts.append("## Claude's memory notes about the village\n" + scrub(text)[:NOTES_CHARS])
@@ -255,8 +257,8 @@ def build():
         tail = read(p, 6000).splitlines()[-15:]
         log_lines.append(f"### {p.name}\n" + "\n".join(line[:300] for line in tail))
     parts.append("## Recent village log lines\n" + scrub("\n".join(log_lines)))
-    head = "\n\n".join(parts)
-    chat, room = [], BRIEF_CHARS - len(head) - 200
+    head = "\n\n".join(parts)[:BRIEF_CHARS - CHAT_MIN_CHARS]
+    chat, room = [], max(BRIEF_CHARS - len(head) - 200, CHAT_MIN_CHARS)
     for ts, _, speaker, text in sorted(recent_chat, reverse=True):  # newest first until full
         line = scrub(fmt(ts, speaker, text, 1500))
         if room - len(line) < 0:
