@@ -133,13 +133,19 @@ def feed(base, email, password, model, num_ctx):
     except Exception as e:
         log(f"could not load the briefing into private-chat ({e}) - it still has your profile")
 
-    files = sorted((memory / "archive").rglob("*.md"))
-    if not files:
-        return
-    kb = call(f"{base}/api/v1/knowledge/create", token,
-              body={"name": "Village", "description": "Read-only copy of the village: docs, chats, logs"})
+    archive = memory / "archive"
+    past = sorted((archive / "private").glob("*.md"))  # your own past chats: a separate library
+    village = [p for p in sorted(archive.rglob("*.md")) if p.parent.name != "private"]
+    if past:
+        library(base, token, "MyChats", "Your past private chats with this model", past)
+    if village:
+        library(base, token, "Village", "Read-only copy of the village: docs, chats, logs", village)
+
+
+def library(base, token, name, description, files):
+    kb = call(f"{base}/api/v1/knowledge/create", token, body={"name": name, "description": description})
     done, start = 0, time.time()
-    log(f"indexing {len(files)} files for #Village ({sum(p.stat().st_size for p in files) // 1024} KB)")
+    log(f"indexing {len(files)} files for #{name} ({sum(p.stat().st_size for p in files) // 1024} KB)")
     for n, p in enumerate(files, 1):
         try:
             fid = upload(base, token, p)
@@ -149,5 +155,5 @@ def feed(base, email, password, model, num_ctx):
             log(f"skipped {p.name}: {e}")
         if n % 10 == 0:
             log(f"  {n}/{len(files)} files after {(time.time() - start) / 60:.1f} min")
-    log(f"Village library ready: {done}/{len(files)} files in {(time.time() - start) / 60:.1f} min "
-        "- type #Village in a chat to search it")
+    log(f"{name} library ready: {done}/{len(files)} files in {(time.time() - start) / 60:.1f} min "
+        f"- type #{name} in a chat to search it")

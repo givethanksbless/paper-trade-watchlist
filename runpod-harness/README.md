@@ -67,7 +67,8 @@ would be sent.
 ## Your private chats carry over
 Pods are deleted, so the chat page's own history goes with them. While a pod runs, the
 launch window copies every chat to `private-chats/` on your computer every 2 minutes; the
-next launch loads them back into the new pod (they're in the sidebar) and adds them to the
-#Village library so the model can recall them. Keep the launch window open until it says
+next launch loads them back into the new pod (they're in the sidebar) and puts them in their
+own library, #MyChats, kept separate from #Village. All of them are also written to one file,
+`my-private-chats.md` (oldest first), which you can attach to any chat by hand. Keep the launch window open until it says
 "no pods left", or the last couple of minutes may not be saved. `private-chats/` is the
 only copy and is git-ignored.
