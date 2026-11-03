@@ -12,13 +12,17 @@ import json
 import os
 import threading
 import time
+import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 import uuid
 from pathlib import Path
 
 HERE = Path(__file__).parent
 CHATS_DIR = HERE / "private-chats"  # the only copy of your private conversations; pods are deleted
 SAVE_EVERY = 120
+BUNDLE_BYTES = 150_000  # small archive files are merged: each upload costs ~12 s however small
+PARALLEL_UPLOADS = 4
 UA = {"User-Agent": "runpod-harness/1.0"}  # Cloudflare-fronted endpoints reject Python's default
 
 
@@ -50,10 +54,20 @@ def wait_for(what, check, minutes=45):
     return False
 
 
-def upload(base, token, path):
+def why(e):
+    """An HTTP error with the server's explanation (e.g. which field a 422 rejected)."""
+    if isinstance(e, urllib.error.HTTPError):
+        try:
+            return f"{e} {e.read()[:300].decode('utf-8', 'replace')}"
+        except Exception:
+            pass
+    return str(e)
+
+
+def upload(base, token, name, data):
     boundary = uuid.uuid4().hex
-    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{path.name}\"\r\n"
-            f"Content-Type: text/markdown\r\n\r\n").encode() + path.read_bytes() + f"\r\n--{boundary}--\r\n".encode()
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n"
+            f"Content-Type: text/markdown\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
     return call(f"{base}/api/v1/files/", token, raw=body,
                 ctype=f"multipart/form-data; boundary={boundary}", timeout=600)["id"]
 
@@ -63,6 +77,25 @@ def write_chat(chat):
     tmp = CHATS_DIR / f".{chat['id']}.tmp"
     tmp.write_text(json.dumps(chat))
     os.replace(tmp, CHATS_DIR / f"{chat['id']}.json")  # never leaves a half-written file
+
+
+def import_chat(base, token, old):
+    """Put one saved chat into the pod. Open WebUI's import format differs between versions, so
+    try the single-chat import, then the list form, then plain 'new chat' (loses the old date)."""
+    form = {"chat": old.get("chat", {}), "meta": old.get("meta") or {}, "pinned": bool(old.get("pinned")),
+            "folder_id": None, "created_at": old.get("created_at"), "updated_at": old.get("updated_at")}
+    attempts = [("chats/import", form), ("chats/import", {"chats": [form]}),
+                ("chats/new", {"chat": old.get("chat", {})})]
+    errors = []
+    for path, body in attempts:
+        try:
+            new = call(f"{base}/api/v1/{path}", token, body=body)
+            new = new[0] if isinstance(new, list) else new
+            if new and new.get("id"):
+                return new
+        except Exception as e:
+            errors.append(f"{path}: {why(e)}")
+    raise RuntimeError(" | ".join(errors))
 
 
 def restore_chats(base, token):
@@ -81,9 +114,7 @@ def restore_chats(base, token):
         for old in olds:
             total += 1
             try:
-                new = call(f"{base}/api/v1/chats/import", token, body={
-                    "chat": old.get("chat", {}), "meta": old.get("meta") or {}, "pinned": old.get("pinned", False),
-                    "folder_id": None, "created_at": old.get("created_at"), "updated_at": old.get("updated_at")})
+                new = import_chat(base, token, old)
                 write_chat(new)
                 new_files.append(f"{new['id']}.json")
             except Exception as e:
@@ -92,7 +123,8 @@ def restore_chats(base, token):
         if len(new_files) == len(olds) and p.name not in new_files:
             p.unlink()  # every chat in it is now saved under its new id
     if total:
-        log(f"restored {done}/{total} saved chats - they're in the sidebar")
+        log(f"restored {done}/{total} saved chats" + (" - they're in the sidebar (refresh the page)" if done
+            else " - your saved file is kept; import it by hand: Settings > Data Controls > Import Chats"))
 
 
 def save_chats(base, token):
@@ -151,18 +183,37 @@ def feed(base, email, password, model, num_ctx):
         library(base, token, "Village", "Read-only copy of the village: docs, chats, logs", village)
 
 
+def bundles(name, files):
+    """Merge files into uploads of up to BUNDLE_BYTES, each part headed by its file name."""
+    out, current = [], b""
+    for p in files:
+        part = f"\n\n# File: {p.relative_to(HERE / 'memory' / 'archive')}\n\n".encode() + p.read_bytes()
+        if current and len(current) + len(part) > BUNDLE_BYTES:
+            out.append(current)
+            current = b""
+        current += part
+    if current:
+        out.append(current)
+    return [(f"{name.lower()}-{i:03d}.md", data) for i, data in enumerate(out, 1)]
+
+
 def library(base, token, name, description, files):
     kb = call(f"{base}/api/v1/knowledge/create", token, body={"name": name, "description": description})
-    done, start = 0, time.time()
-    log(f"indexing {len(files)} files for #{name} ({sum(p.stat().st_size for p in files) // 1024} KB)")
-    for n, p in enumerate(files, 1):
+    parts, start, done = bundles(name, files), time.time(), []
+    log(f"indexing {len(files)} files as {len(parts)} uploads for #{name} "
+        f"({sum(len(d) for _, d in parts) // 1024} KB, {PARALLEL_UPLOADS} at a time)")
+
+    def add(part):
+        fname, data = part
         try:
-            fid = upload(base, token, p)
+            fid = upload(base, token, fname, data)
             call(f"{base}/api/v1/knowledge/{kb['id']}/file/add", token, body={"file_id": fid}, timeout=600)
-            done += 1
+            done.append(fname)
+            if len(done) % 5 == 0:
+                log(f"  {len(done)}/{len(parts)} uploads after {(time.time() - start) / 60:.1f} min")
         except Exception as e:
-            log(f"skipped {p.name}: {e}")
-        if n % 10 == 0:
-            log(f"  {n}/{len(files)} files after {(time.time() - start) / 60:.1f} min")
-    log(f"{name} library ready: {done}/{len(files)} files in {(time.time() - start) / 60:.1f} min "
+            log(f"skipped {fname}: {why(e)}")
+    with ThreadPoolExecutor(PARALLEL_UPLOADS) as pool:
+        list(pool.map(add, parts))
+    log(f"{name} library ready: {len(done)}/{len(parts)} uploads in {(time.time() - start) / 60:.1f} min "
         f"- type #{name} in a chat to search it")
