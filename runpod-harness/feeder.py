@@ -69,21 +69,30 @@ def restore_chats(base, token):
     """Load saved chats into the new pod; each one is re-saved under its new id before the old
     file is removed, so a failure at any point never loses a chat."""
     saved = sorted(CHATS_DIR.glob("*.json")) if CHATS_DIR.is_dir() else []
-    done = 0
+    done = total = 0
     for p in saved:
-        try:
-            old = json.loads(p.read_text())
-            new = call(f"{base}/api/v1/chats/import", token, body={
-                "chat": old.get("chat", {}), "meta": old.get("meta") or {}, "pinned": old.get("pinned", False),
-                "folder_id": None, "created_at": old.get("created_at"), "updated_at": old.get("updated_at")})
-            write_chat(new)
-            if new["id"] != old.get("id"):
-                p.unlink()
-            done += 1
-        except Exception as e:
-            log(f"could not restore chat {p.stem}: {e}")
-    if saved:
-        log(f"restored {done}/{len(saved)} saved chats - they're in the sidebar")
+        try:  # one chat per file, or a whole "Export Chats" file from the chat page's settings
+            data = json.loads(p.read_text())
+        except ValueError as e:
+            log(f"could not read {p.name}: {e}")
+            continue
+        olds = data if isinstance(data, list) else [data]
+        new_files = []
+        for old in olds:
+            total += 1
+            try:
+                new = call(f"{base}/api/v1/chats/import", token, body={
+                    "chat": old.get("chat", {}), "meta": old.get("meta") or {}, "pinned": old.get("pinned", False),
+                    "folder_id": None, "created_at": old.get("created_at"), "updated_at": old.get("updated_at")})
+                write_chat(new)
+                new_files.append(f"{new['id']}.json")
+            except Exception as e:
+                log(f"could not restore a chat from {p.name}: {e}")
+        done += len(new_files)
+        if len(new_files) == len(olds) and p.name not in new_files:
+            p.unlink()  # every chat in it is now saved under its new id
+    if total:
+        log(f"restored {done}/{total} saved chats - they're in the sidebar")
 
 
 def save_chats(base, token):

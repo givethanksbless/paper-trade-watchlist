@@ -224,15 +224,17 @@ def build():
     past = []
     for p in PRIVATE_CHATS.glob("*.json") if PRIVATE_CHATS.is_dir() else []:
         try:
-            c = json.loads(read(p))
+            data = json.loads(read(p))
         except (ValueError, OSError):
             continue
-        msgs = (c.get("chat") or {}).get("messages") or []
-        text = "\n\n".join(f"{m.get('role', '?')}: {m.get('content', '')}" for m in msgs
-                            if isinstance(m, dict) and m.get("content"))
-        if text:
-            title = c.get("title") or (c.get("chat") or {}).get("title") or p.stem
-            past.append((c.get("updated_at") or 0, p.stem, scrub(f"# Past private chat: {title}\n\n{text}")))
+        for i, c in enumerate(data if isinstance(data, list) else [data]):  # list = "Export Chats" file
+            msgs = (c.get("chat") or {}).get("messages") or []
+            text = "\n\n".join(f"{m.get('role', '?')}: {m.get('content', '')}" for m in msgs
+                                if isinstance(m, dict) and m.get("content"))
+            if text:
+                title = c.get("title") or (c.get("chat") or {}).get("title") or p.stem
+                past.append((c.get("updated_at") or 0, c.get("id") or f"{p.stem}-{i}",
+                             scrub(f"# Past private chat: {title}\n\n{text}")))
     for _, stem, text in past:
         write_parts("private", f"private-chat-{stem[:8]}.md", text)
     if past:  # oldest first, newest at the bottom: where you left off
@@ -318,7 +320,7 @@ def summary(sessions):
     lines.append(f"  VPS: {len(vps)} file(s), {sum(p.stat().st_size for p in vps) // 1024} KB from {VPS_SSH}"
                  if vps else f"  VPS: {vps_note}")
     if CHATS_FILE.exists():
-        lines.append(f"  your past private chats: {len(list(PRIVATE_CHATS.glob('*.json')))} saved, "
+        lines.append(f"  your past private chats: {CHATS_FILE.read_text().count('# Past private chat:')} saved, "
                      f"all in {CHATS_FILE.name} ({CHATS_FILE.stat().st_size // 1024} KB) - library #MyChats")
     for sub in ("docs", "chats", "logs", "private"):
         fs = [p for p in files if p.parent.name == sub]
