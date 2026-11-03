@@ -18,7 +18,6 @@ import re
 import shutil
 import subprocess
 import time
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 VILLAGE = Path(os.environ.get("VILLAGE_DIR", "~/trading")).expanduser()
@@ -37,7 +36,7 @@ BRIEF_DOCS = ["TRADER-PROFILE.md", "ABOUT_PLAYA.md"]
 VPS_SSH = os.environ.get("VPS_SSH", "")
 VPS_DIR = os.environ.get("VPS_DIR", "/root/trading")
 VPS_FILES, VPS_TAIL = 40, 20_000  # newest data files from the last 3 days, last 20 KB of each
-VPS_BRIEF_CHARS = 8_000
+VPS_BRIEF_CHARS = 3_000  # status only; the VPS files themselves are in #Village
 VPS_SCRIPT = r"""
 echo "=== STATUS"; uptime
 for s in microstructure-lab weex-bot telegram-relay; do echo "$s: $(systemctl is-active $s 2>/dev/null)"; done
@@ -49,12 +48,10 @@ find . -maxdepth 3 -type f \( -name "*.log" -o -name "*.jsonl" -o -name "*.json"
 """
 JASON_PROFILE = Path("~/.claude/jason-profile.md").expanduser()  # Jason's own profile, read-only
 PROFILE_CHARS = 10_000
-LEFT_OFF_CHARS = 8_000  # the end of your latest private chat, so a new chat picks up from there
-NOTES_CHARS = 12_000  # Claude Code's own memory notes about the village, in the briefing
-RECENT_DAYS = 3
+OUR_CHATS_CHARS = 36_000  # Jason's own past chats with this model: the main part of the briefing
+NOTES_CHARS = 8_000  # Claude Code's own memory notes about the village, in the briefing
 BRIEF_CHARS = 70_000  # ~18K tokens, leaves ~14K of private-chat's 32K context for the conversation
-CHAT_MIN_CHARS = 20_000  # recent village chat always gets at least this much of the briefing
-DOC_CHARS = 10_000  # per trader doc in the briefing; the full docs are in the archive
+DOC_CHARS = 5_000  # per trader doc in the briefing's background; the full docs are in #Village
 CHAT_ARCHIVE_CHARS = 5_000_000
 SESSION_ARCHIVE_CHARS = 1_500_000  # per chat; long chats keep their most recent part
 LOG_TAIL_CHARS = 100_000  # per log file
@@ -212,8 +209,6 @@ def build():
     shutil.rmtree(OUT, ignore_errors=True)
     for sub in ("docs", "chats", "logs", "vps", "private"):
         (OUT / "archive" / sub).mkdir(parents=True)
-    cutoff = time.time() - RECENT_DAYS * 86400
-    cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).isoformat()
 
     # archive: every top-level doc, every chat session (text only), log tails
     for p in village_files(".md"):
@@ -222,11 +217,9 @@ def build():
     for p in notes:
         write_parts("docs", f"claude-note-{p.parent.parent.name[-8:]}-{p.name}", scrub(read(p)))
     sessions = village_sessions()
-    recent_chat = []
     CHAT_CACHE.mkdir(exist_ok=True)
     for p in sessions:  # refresh the permanent copy of every chat Claude Code still has
         msgs = list(chat_messages(p))
-        recent_chat += [(m[0], i, m[1], m[2]) for i, m in enumerate(msgs) if m[0] >= cutoff_iso]
         text = scrub("\n\n".join(fmt(*m, 4000) for m in msgs))
         if text:
             cached = CHAT_CACHE / f"chat-{p.stem[:8]}.md"
@@ -253,7 +246,12 @@ def build():
                              scrub(f"# Past private chat: {title}\n\n{text}")))
     for _, stem, text in past:
         write_parts("private", f"private-chat-{stem[:8]}.md", text)
-    left_off = max(past)[2][-LEFT_OFF_CHARS:] if past else ""
+    ours, room = [], OUR_CHATS_CHARS  # newest first; a long chat keeps its end, where you left off
+    for _, _, text in sorted(past, reverse=True):
+        if room <= 0:
+            break
+        ours.append(text[-room:])
+        room -= len(ours[-1])
     if past:  # oldest first, newest at the bottom: where you left off
         CHATS_FILE.write_text("\n\n---\n\n".join(t for _, _, t in sorted(past)))
     vps_status, vps_files = read_vps()
@@ -266,50 +264,31 @@ def build():
         if text:
             write_parts("logs", p.name + ".md", text)
 
-    # briefing: trader docs, what changed, recent log lines, then as much recent chat as fits
-    parts = [f"# Village briefing\nRead-only copy collected {time.strftime('%Y-%m-%d %H:%M')} "
-             f"covering the last {RECENT_DAYS} days. The 'village chat' below is between Jason and "
-             "Claude, his other AI assistant that runs the village - those are NOT conversations with "
-             "you. In it, 'Jason' = Jason's instructions and 'Claude' = Claude's replies. Your own past "
-             "conversations with Jason are under 'Where you and Jason left off' and in #MyChats. "
-             "For anything older or more detailed about the village, search #Village."]
-    if left_off:
-        parts.append("## Where you and Jason left off (end of your last conversation with him)\n"
-                     "'user' is Jason, 'assistant' is you.\n" + left_off)
+    # briefing: Jason's own conversations with this model come first and get most of the room;
+    # the village (Claude's chats, docs, logs, VPS) is short background - the detail is in #Village
+    parts = [f"# Briefing for your conversations with Jason\nCollected {time.strftime('%Y-%m-%d %H:%M')}. "
+             "Your main memory is your own past conversations with Jason, below ('user' = Jason, "
+             "'assistant' = you) and searchable as #MyChats: carry on from where you left off. "
+             "The village background further down is deliberately short. Jason's separate chats with "
+             "Claude (his other AI assistant, which runs the village) are NOT conversations with you; "
+             "they and all village detail are searchable when Jason attaches #Village."]
     if JASON_PROFILE.is_file():
         parts.append("## About Jason (his own profile)\n" + scrub(read(JASON_PROFILE))[:PROFILE_CHARS])
+    parts.append("## Your conversations with Jason (oldest first; the last one is where you left off)\n"
+                 + ("\n\n---\n\n".join(reversed(ours)) if ours else "(none saved yet)"))
+    background = []
     for name in BRIEF_DOCS:
         if (VILLAGE / name).is_file():
-            parts.append(f"## {name}\n" + scrub(read(VILLAGE / name))[:DOC_CHARS])
+            background.append(f"### {name}\n" + scrub(read(VILLAGE / name))[:DOC_CHARS])
     if notes:
-        text = "\n\n".join(f"### {p.name}\n{read(p).strip()}" for p in notes)
-        parts.append("## Claude's memory notes about the village\n" + scrub(text)[:NOTES_CHARS])
-    changed = sorted((p for p in VILLAGE.iterdir() if p.is_file() and p.stat().st_mtime > cutoff
-                      and not SECRET_NAME.search(p.name)), key=lambda p: -p.stat().st_mtime)
-    parts.append("## Village files changed recently\n" + "\n".join(
-        f"- {time.strftime('%m-%d %H:%M', time.localtime(p.stat().st_mtime))} {p.name} "
-        f"({p.stat().st_size // 1024} KB)" for p in changed[:60]))
-    if vps_files or "=== STATUS" in vps_status:
-        recent = [f"### {path}\n" + "\n".join(line[:300] for line in text.splitlines()[-8:])
-                  for path, text in list(vps_files.items())[:10]]
-        parts.append("## Live village on the VPS (read-only snapshot)\n" +
-                     scrub(vps_status + "\n\n" + "\n".join(recent))[:VPS_BRIEF_CHARS])
-    log_lines = []
-    for p in [p for p in logs if p.stat().st_mtime > cutoff][:10]:
-        tail = read(p, 6000).splitlines()[-15:]
-        log_lines.append(f"### {p.name}\n" + "\n".join(line[:300] for line in tail))
-    parts.append("## Recent village log lines\n" + scrub("\n".join(log_lines)))
-    head = "\n\n".join(parts)[:BRIEF_CHARS - CHAT_MIN_CHARS]
-    chat, room = [], max(BRIEF_CHARS - len(head) - 200, CHAT_MIN_CHARS)
-    for ts, _, speaker, text in sorted(recent_chat, reverse=True):  # newest first until full
-        line = scrub(fmt(ts, speaker, text, 1500))
-        if room - len(line) < 0:
-            break
-        chat.append(line)
-        room -= len(line) + 2
-    (OUT / "briefing.md").write_text(
-        head + "\n\n## Recent village chat between Jason and Claude (oldest first; not with you)\n"
-        + "\n\n".join(reversed(chat)))
+        text = "\n\n".join(f"#### {p.name}\n{read(p).strip()}" for p in notes)
+        background.append("### Claude's memory notes about the village\n" + scrub(text)[:NOTES_CHARS])
+    if "=== STATUS" in vps_status:
+        background.append("### Live village on the VPS (status)\n" + scrub(vps_status)[:VPS_BRIEF_CHARS])
+    if background:
+        parts.append("## Village background (short; Jason can attach #Village for detail)\n"
+                     + "\n\n".join(background))
+    (OUT / "briefing.md").write_text("\n\n".join(parts)[:BRIEF_CHARS])
     global vps_note
     vps_note = vps_status if vps_status.startswith("skipped") else "connected, no recent data files"
     return summary(sessions)
