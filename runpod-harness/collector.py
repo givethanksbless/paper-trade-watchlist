@@ -49,6 +49,7 @@ find . -maxdepth 3 -type f \( -name "*.log" -o -name "*.jsonl" -o -name "*.json"
 """
 JASON_PROFILE = Path("~/.claude/jason-profile.md").expanduser()  # Jason's own profile, read-only
 PROFILE_CHARS = 10_000
+LEFT_OFF_CHARS = 8_000  # the end of your latest private chat, so a new chat picks up from there
 NOTES_CHARS = 12_000  # Claude Code's own memory notes about the village, in the briefing
 RECENT_DAYS = 3
 BRIEF_CHARS = 70_000  # ~18K tokens, leaves ~14K of private-chat's 32K context for the conversation
@@ -252,6 +253,7 @@ def build():
                              scrub(f"# Past private chat: {title}\n\n{text}")))
     for _, stem, text in past:
         write_parts("private", f"private-chat-{stem[:8]}.md", text)
+    left_off = max(past)[2][-LEFT_OFF_CHARS:] if past else ""
     if past:  # oldest first, newest at the bottom: where you left off
         CHATS_FILE.write_text("\n\n---\n\n".join(t for _, _, t in sorted(past)))
     vps_status, vps_files = read_vps()
@@ -266,9 +268,14 @@ def build():
 
     # briefing: trader docs, what changed, recent log lines, then as much recent chat as fits
     parts = [f"# Village briefing\nRead-only copy collected {time.strftime('%Y-%m-%d %H:%M')} "
-             f"covering the last {RECENT_DAYS} days. Labels: 'Jason' = Jason's instructions, "
-             "'Claude' = Claude's replies, 'village files/logs' = raw village output. "
-             "For anything older or more detailed, the full archive is searchable as #Village."]
+             f"covering the last {RECENT_DAYS} days. The 'village chat' below is between Jason and "
+             "Claude, his other AI assistant that runs the village - those are NOT conversations with "
+             "you. In it, 'Jason' = Jason's instructions and 'Claude' = Claude's replies. Your own past "
+             "conversations with Jason are under 'Where you and Jason left off' and in #MyChats. "
+             "For anything older or more detailed about the village, search #Village."]
+    if left_off:
+        parts.append("## Where you and Jason left off (end of your last conversation with him)\n"
+                     "'user' is Jason, 'assistant' is you.\n" + left_off)
     if JASON_PROFILE.is_file():
         parts.append("## About Jason (his own profile)\n" + scrub(read(JASON_PROFILE))[:PROFILE_CHARS])
     for name in BRIEF_DOCS:
@@ -301,7 +308,8 @@ def build():
         chat.append(line)
         room -= len(line) + 2
     (OUT / "briefing.md").write_text(
-        head + "\n\n## Recent village chat (oldest first)\n" + "\n\n".join(reversed(chat)))
+        head + "\n\n## Recent village chat between Jason and Claude (oldest first; not with you)\n"
+        + "\n\n".join(reversed(chat)))
     global vps_note
     vps_note = vps_status if vps_status.startswith("skipped") else "connected, no recent data files"
     return summary(sessions)
