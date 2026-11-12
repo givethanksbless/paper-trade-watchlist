@@ -1,13 +1,13 @@
 # Paper Trade Demo Status
 
-Generated: 2026-11-11 23:11 UTC
+Generated: 2026-11-12 04:42 UTC
 
-Balance: $1483.17 (start $1000.00, net +483.17)
-Closed trades: 66  Wins: 30  Losses: 36  Win rate: 45.5%
+Balance: $1954.28 (start $1000.00, net +954.28)
+Closed trades: 62  Wins: 32  Losses: 30  Win rate: 51.6%
 Open positions: 0
 
 ## Open positions
 - (none)
 
 ## Closed in last 24h
-- [ONTUSDT] SHORT  WIN  entry=0.041910  risk=$20.00  pnl=$+72.54  closed=2026-11-11 22:30 UTC
+- [ONTUSDT] SHORT  WIN  entry=0.041910  risk=$20.00  pnl=$+71.83  closed=2026-11-11 22:45 UTC
