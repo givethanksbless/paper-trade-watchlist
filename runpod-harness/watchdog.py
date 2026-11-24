@@ -44,13 +44,13 @@ def terminate(reason):
     auth = {"Authorization": f"Bearer {API_KEY}"}
     while True:  # once the pod is gone this process dies with it
         try:
-            status, _ = http("DELETE", f"https://rest.runpod.io/v1/pods/{POD_ID}", headers=auth)
+            status, _ = http("DELETE", f"https://api.runpod.io/v2/pods/{POD_ID}", headers=auth)
             log(f"REST delete -> {status}")
         except Exception as e:
             log(f"REST delete failed: {e}")
         try:
-            q = {"query": f'mutation {{ podTerminate(input: {{podId: "{POD_ID}"}}) }}'}
-            status, out = http("POST", "https://api.runpod.io/graphql", q, headers=auth)
+            q = {"query": f'mutation {{ podTerminate(input: {{podId: "{POD_ID}"}}) }}'}  # rp-migrate: keep-v1 (second delete path)
+            status, out = http("POST", "https://api.runpod.io/graphql", q, headers=auth)  # rp-migrate: keep-v1
             log(f"GraphQL terminate -> {status} {out[:200]!r}")
         except Exception as e:
             log(f"GraphQL terminate failed: {e}")
