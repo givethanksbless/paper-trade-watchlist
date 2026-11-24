@@ -1,13 +1,13 @@
 # Paper Trade Demo Status
 
-Generated: 2026-11-23 13:47 UTC
+Generated: 2026-11-24 01:19 UTC
 
-Balance: $2433.66 (start $1000.00, net +1433.66)
-Closed trades: 57  Wins: 34  Losses: 23  Win rate: 59.6%
-Open positions: 1
+Balance: $1465.76 (start $1000.00, net +465.76)
+Closed trades: 37  Wins: 19  Losses: 18  Win rate: 51.4%
+Open positions: 0
 
 ## Open positions
-- [AUDIOUSDT] SHORT  entry=0.010990  sl=0.011129  tp=0.010364  risk=$20.00  opened=2026-11-21 18:20 UTC
+- (none)
 
 ## Closed in last 24h
 - (none)
