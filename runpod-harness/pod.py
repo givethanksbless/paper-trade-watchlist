@@ -9,8 +9,10 @@
   python3 pod.py terminate-all                             delete every pod
   python3 pod.py guard    [--max-hours H]                  watch from outside, delete stuck/overdue pods
   python3 pod.py collect                                   build memory/ from the village (read-only, free)
+  python3 pod.py update                                    download the latest harness files (keeps profile.md)
 
 launch/list/terminate need RUNPOD_API_KEY in the environment. startcmd needs nothing.
+Uses Runpod's REST v2 API (api.runpod.io/v2); the old REST v1 host no longer resolves.
 Safety net: besides watchdog.py, the start command runs a backup timer that deletes
 the pod 10 min after the time cap even if the watchdog died.
 If profile.md sits next to this file, the pod gets a "private-chat" model that knows it.
@@ -31,14 +33,14 @@ from pathlib import Path
 
 IMAGE = "ghcr.io/open-webui/open-webui:ollama"
 MODEL = "huihui_ai/qwen3.5-abliterated:27b-Claude-q8_0"  # 30 GB download
-# 48 GB cards at ~$0.33-0.35/hr; Runpod takes whichever is free (pricier 48 GB cards left out on purpose)
+# 48 GB cards; each launch try rents the cheapest one the live catalog shows in stock
 GPU_TYPES = ["NVIDIA RTX A6000", "NVIDIA A40"]
+MAX_PRICE = 0.59  # $/hr: a card/cloud pair priced above this is never rented
 EMBED_MODEL = "nomic-embed-text"  # small model that indexes the #Village library on the GPU
-API = "https://rest.runpod.io/v1"
+API = "https://api.runpod.io/v2"
 START_MIN = 15  # guard deletes a pod whose container hasn't started by then
 LAUNCH_TRIES = 20  # one a minute while no GPU is free; failed tries cost nothing
-# each try asks the cheaper community hosts first, then Runpod's own data centers
-# (A6000/A40: ~$0.33-0.35/hr community, ~$0.59/hr secure)
+# community hosts are cheaper; Runpod's own (secure) data centers are the fallback
 CLOUDS = ["COMMUNITY", "SECURE"]
 
 
@@ -53,7 +55,7 @@ def start_cmd(max_hours):
            if profile.exists() else "") +
         "nohup python3 /tmp/watchdog.py > /tmp/watchdog.log 2>&1 & "
         f"(sleep {backup}; curl -s -X DELETE -H \"Authorization: Bearer $RUNPOD_API_KEY\" "
-        "https://rest.runpod.io/v1/pods/$RUNPOD_POD_ID) & "
+        "https://api.runpod.io/v2/pods/$RUNPOD_POD_ID) & "
         "cd /app/backend && exec bash start.sh"
     )
     return ["bash", "-c", script]
@@ -64,7 +66,7 @@ def login():
     return (email, password) if email and password else None
 
 
-def pod_spec(idle_min, max_hours, cloud="COMMUNITY"):
+def pod_spec(idle_min, max_hours, cloud="COMMUNITY", gpu_id=GPU_TYPES[0]):
     env = {"MODEL": MODEL, "IDLE_MIN": str(idle_min), "MAX_HOURS": str(max_hours),
            "DEFAULT_MODELS": "private-chat",  # Open WebUI preselects it in every chat
            "EMBED_MODEL": EMBED_MODEL, "RAG_EMBEDDING_ENGINE": "ollama", "RAG_EMBEDDING_MODEL": EMBED_MODEL,
@@ -72,17 +74,15 @@ def pod_spec(idle_min, max_hours, cloud="COMMUNITY"):
            "RAG_EMBEDDING_BATCH_SIZE": "64", "CHUNK_SIZE": "2000", "CHUNK_OVERLAP": "200"}
     if login():  # Open WebUI creates this admin on first start and turns sign-up off
         env.update(WEBUI_ADMIN_EMAIL=login()[0], WEBUI_ADMIN_PASSWORD=login()[1], WEBUI_ADMIN_NAME="Jason")
-    return {
+    return {  # REST v2 create body; no `mounts`: nothing persists on the pod itself
         "name": "private-chat",
-        "imageName": IMAGE,
-        "gpuTypeIds": GPU_TYPES,
-        "gpuCount": 1,
-        "cloudType": cloud,
-        "containerDiskInGb": 80,
-        "volumeInGb": 0,
+        "image": IMAGE,
+        "gpu": {"id": gpu_id, "count": 1},
+        "cloud": cloud,
+        "disk": 80,
         "ports": ["8080/http"],
         "env": env,
-        "dockerStartCmd": start_cmd(max_hours),
+        "cmd": start_cmd(max_hours),  # exec-form CMD, same as the old start command
     }
 
 
@@ -91,40 +91,42 @@ def api(method, path, body=None):
     req = urllib.request.Request(
         API + path, method=method, data=json.dumps(body).encode() if body else None,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "User-Agent": "runpod-harness/1.0"})  # default Python UA gets 403 from rest.runpod.io
+                 "User-Agent": "runpod-harness/1.0"})  # Cloudflare-fronted: Python's default UA gets 403
     with urllib.request.urlopen(req, timeout=60) as r:
         raw = r.read()
     return json.loads(raw) if raw else None
 
 
-def pod_info(pod_id):
-    # GraphQL has the runtime and GPU name, which the REST pod object leaves empty
-    q = {"query": f'query {{ pod(input: {{podId: "{pod_id}"}}) '
-                  '{ runtime { uptimeInSeconds } machine { gpuDisplayName } } }'}
-    req = urllib.request.Request(
-        "https://api.runpod.io/graphql", data=json.dumps(q).encode(),
-        headers={"Authorization": f"Bearer {os.environ['RUNPOD_API_KEY']}",
-                 "Content-Type": "application/json", "User-Agent": "runpod-harness/1.0"})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read())["data"]["pod"] or {}
+def pods():
+    return (api("GET", "/pods") or {}).get("pods") or []  # v2 wraps the list  # rp-migrate: ignore
 
 
 def started(pod_id):
     # the watchdog runs inside the container, so a pod stuck before start has no watchdog
-    return bool(pod_info(pod_id).get("runtime"))
+    pod = api("GET", f"/pods/{pod_id}") or {}
+    return pod.get("status") == "RUNNING" or bool(pod.get("runtime"))
 
 
-def gpu_name(pod_id):
-    try:
-        return (pod_info(pod_id).get("machine") or {}).get("gpuDisplayName") or "GPU"
-    except Exception:
-        return "GPU"
+STOCK_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}  # anything else (NONE, missing) ranks last
+
+
+def candidates():
+    """(price, cloud, gpu id) for every card/cloud pair offered at or under MAX_PRICE, best stock first,
+    then cheapest. Stock only orders the tries: the catalog is an estimate, a failed try costs nothing."""
+    found = []
+    for cloud in CLOUDS:
+        cat = api("GET", f"/catalog/gpus?include=AVAILABILITY&product=POD&count=1&cloud={cloud}") or {}
+        for g in cat.get("gpus") or []:
+            price = (g.get("price") or {}).get(cloud.lower())
+            if g.get("id") in GPU_TYPES and g.get(cloud.lower()) and price is not None and price <= MAX_PRICE:
+                found.append((STOCK_RANK.get(g.get("availability"), 3), price, cloud, g["id"]))
+    return [(price, cloud, gpu_id) for _, price, cloud, gpu_id in sorted(found)]
 
 
 def launch(idle_min, max_hours):
-    pods = api("GET", "/pods") or []
-    if pods:
-        sys.exit(f"{len(pods)} pod(s) already running - run terminate-all first if you want a new one")
+    running = pods()
+    if running:
+        sys.exit(f"{len(running)} pod(s) already running - run terminate-all first if you want a new one")
     if input("This starts a paid GPU pod. Type YES to continue: ").strip().lower() != "yes":
         sys.exit("cancelled")
     if login():
@@ -132,25 +134,29 @@ def launch(idle_min, max_hours):
         print(collector.build(), flush=True)
     else:
         print("CHAT_EMAIL/CHAT_PASSWORD not set: no fixed login and no village feed this time", flush=True)
-    pod = None
+    pod = last = None
     for i in range(1, LAUNCH_TRIES + 1):
-        for cloud in CLOUDS:
+        try:
+            options = candidates()
+        except Exception as e:
+            options, last = [], f"catalog unavailable: {e}"
+        for price, cloud, gpu_id in options:
             try:
-                pod = api("POST", "/pods", pod_spec(idle_min, max_hours, cloud))
+                pod = api("POST", "/pods", pod_spec(idle_min, max_hours, cloud, gpu_id))  # rp-migrate: ignore
                 break
             except urllib.error.HTTPError as e:
-                if e.code != 500:
-                    raise
+                detail = e.read()[:300].decode("utf-8", "replace")
+                if e.code in (401, 403, 422):  # a bad key or body, not scarce GPUs: retrying won't help
+                    sys.exit(f"Runpod rejected the request ({e.code}): {detail} - nothing was created")
+                last = f"{gpu_id} ({cloud.lower()}): {e.code} {detail[:150]}"
         if pod:
             break
-        print(time.strftime("%H:%M:%S"), f"try {i}/{LAUNCH_TRIES}: no GPU free yet, "
-              "retrying in 60s (costs nothing)", flush=True)
+        print(time.strftime("%H:%M:%S"), f"try {i}/{LAUNCH_TRIES}: no GPU free at <= ${MAX_PRICE}/hr yet, "
+              "retrying in 60s (costs nothing)" + (f" [{last}]" if last and i == 1 else ""), flush=True)
         time.sleep(60)
     else:
         sys.exit("no GPU became free - nothing was created, try again later")
-    time.sleep(5)
-    print(f"\npod {pod['id']} created on {gpu_name(pod['id'])} ({cloud.lower()} cloud) "
-          f"at ${pod.get('costPerHr')}/hr\n"
+    print(f"\npod {pod['id']} created on {gpu_id} ({cloud.lower()} cloud) at ${pod.get('cost', price)}/hr\n"
           f"chat link (ready in ~10-15 min): https://{pod['id']}-8080.proxy.runpod.net\n"
           f"Leave this window open: guard is now watching and stops once the pod is gone.\n"
           f"(Closing it is safe too - the pod still deletes itself.)\n", flush=True)
@@ -164,12 +170,12 @@ def launch(idle_min, max_hours):
 def guard(max_hours):
     while True:
         try:
-            pods = api("GET", "/pods") or []
-            if not pods:
+            running = pods()
+            if not running:
                 print(time.strftime("%H:%M:%S"), "no pods left - guard done", flush=True)
                 return
-            for pod in pods:
-                created = datetime.strptime(pod["createdAt"][:19], "%Y-%m-%d %H:%M:%S")
+            for pod in running:  # createdAt is UTC, "2026-11-24T14:00:00Z" or "2026-11-24 14:00:00 ..."
+                created = datetime.strptime(pod["createdAt"][:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
                 age = (datetime.now(timezone.utc).replace(tzinfo=None) - created).total_seconds() / 60
                 if age > max_hours * 60 + 15:
                     reason = f"past time cap ({age:.0f} min)"
@@ -184,10 +190,28 @@ def guard(max_hours):
         time.sleep(30)
 
 
+UPDATE_URL = "https://raw.githubusercontent.com/givethanksbless/paper-trade-watchlist/main/runpod-harness/"
+UPDATE_FILES = ["pod.py", "watchdog.py", "collector.py", "feeder.py"]  # never profile.md: that's yours
+
+
+def update():
+    here = Path(__file__).parent
+    fetched = {}
+    for name in UPDATE_FILES:  # fetch everything first, so a failed download changes nothing
+        req = urllib.request.Request(UPDATE_URL + name, headers={"User-Agent": "runpod-harness/1.0"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            fetched[name] = r.read()
+    for name, data in fetched.items():
+        tmp = here / f".{name}.new"
+        tmp.write_bytes(data)
+        os.replace(tmp, here / name)
+    print("updated:", ", ".join(UPDATE_FILES), "(GitHub can lag a few minutes after a change)")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("cmd", choices=["startcmd", "launch", "list", "terminate", "terminate-all", "guard",
-                                   "collect"])
+                                   "collect", "update"])
     p.add_argument("pod_id", nargs="?")
     p.add_argument("--idle-min", type=float, default=30)
     p.add_argument("--max-hours", type=float, default=3)
@@ -198,14 +222,14 @@ def main():
     elif a.cmd == "launch":
         launch(a.idle_min, a.max_hours)
     elif a.cmd == "list":
-        for pod in api("GET", "/pods") or []:
-            print(pod["id"], pod.get("name"), pod.get("desiredStatus"), gpu_name(pod["id"]),
-                  f"${pod.get('costPerHr')}/hr")
+        for pod in pods():
+            print(pod["id"], pod.get("name"), pod.get("status"), (pod.get("gpu") or {}).get("id", "GPU"),
+                  f"${pod.get('cost')}/hr")
     elif a.cmd == "terminate":
         api("DELETE", f"/pods/{a.pod_id or sys.exit('give a POD_ID')}")
         print(f"terminated {a.pod_id}")
     elif a.cmd == "terminate-all":
-        for pod in api("GET", "/pods") or []:
+        for pod in pods():
             api("DELETE", f"/pods/{pod['id']}")
             print(f"terminated {pod['id']}")
     elif a.cmd == "guard":
@@ -213,6 +237,8 @@ def main():
     elif a.cmd == "collect":
         import collector
         print(collector.build())
+    elif a.cmd == "update":
+        update()
 
 
 if __name__ == "__main__":

@@ -1,8 +1,15 @@
 # Runpod private-chat harness
 
 Open WebUI + Ollama on one 48 GB GPU (A6000 or A40), with a watchdog that deletes the pod when
-idle or past a time cap. Needs `RUNPOD_API_KEY`. Each launch try asks Runpod's community hosts
-first (~$0.33-0.35/hr), then its secure data centers (~$0.59/hr); pricier 48 GB cards are left out.
+idle or past a time cap. Needs `RUNPOD_API_KEY`. Uses Runpod's REST v2 API (`api.runpod.io/v2`).
+Each launch try reads the live GPU catalog and tries every A6000/A40 offer priced at or under
+`MAX_PRICE` ($0.59/hr), best stock first, then cheapest; nothing above the cap is ever rented.
+
+To get the latest harness files (your `profile.md` is never touched):
+
+```bash
+cd ~/runpod-harness && python3 pod.py update
+```
 
 Model: `huihui_ai/qwen3.5-abliterated:27b-Claude-q8_0` (27B, 8-bit, 30 GB download). To
 change it, edit `MODEL` in pod.py and make sure `GPU_TYPES` has enough memory for it.
